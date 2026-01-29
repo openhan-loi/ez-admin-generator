@@ -1,0 +1,19 @@
+{
+  "name": "upload-generator",
+  "version": "1.0.0",
+  "description": "패킹리스트 파일을 분석하여 제품명, 색상, 사이즈, 수량을 추출하고 이지어드민 업로드 파일을 생성하는 웹 기반 시스템입니다.",
+  "main": "app.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "sqlite3": "^5.1.7"
+  }
+}
