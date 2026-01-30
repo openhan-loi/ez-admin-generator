@@ -46,8 +46,15 @@ const AppState = {
 		const targetContent = document.getElementById(tabId);
 		if (targetContent) {
 			targetContent.classList.add('active');
-			// 내부 섹션 활성화 복구 (보이게 하기)
-			targetContent.querySelectorAll('.section').forEach((s) => s.classList.add('active'));
+
+			// [버그 수정] 모든 내부 섹션에 active를 강제로 주는 대신,
+			// 만약 활성화된 섹션이 하나도 없다면 첫 번째 섹션만 활성화합니다.
+			// 이를 통해 분석 탭 등 여러 섹션이 공존하는 곳에서 UI가 겹치는 문제를 방지합니다.
+			const activeSections = targetContent.querySelectorAll('.section.active');
+			if (activeSections.length === 0) {
+				const firstSection = targetContent.querySelector('.section');
+				if (firstSection) firstSection.classList.add('active');
+			}
 		}
 
 		// 3. 플로팅 버튼 가시성 제어 (분석 및 매핑 탭에서 허용)
