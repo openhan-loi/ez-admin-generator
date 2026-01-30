@@ -1223,6 +1223,11 @@ const EventListeners = {
 		document.getElementById('clear-mapping-data-btn')?.addEventListener('click', () => {
 			MappingManager.clearAllMappingData();
 		});
+
+		// [신규] 이지어드민 업로드 파일 생성 버튼
+		document.getElementById('generate-ezauto-btn')?.addEventListener('click', () => {
+			MappingManager.generateEzAdminFile();
+		});
 	},
 
 	downloadExcel() {
@@ -1680,9 +1685,11 @@ const MappingManager = {
 				<td>${statusBadge}</td>
 				<td>${m.source.wholesaler}</td>
 				<td>
-					<div class="mapping-source-item">
-						<strong>${m.source.productName}</strong><br>
-						<small>${m.source.color} | ${Object.keys(m.source.quantities)[0] || ''}</small>
+					<div class="mapping-source-item" style="font-size:14px; line-height:1.4;">
+						<strong style="color:var(--color-text-primary);">${m.source.productName}</strong><br>
+						<span style="color:var(--color-primary); font-weight:700; border-bottom:1px solid var(--color-primary);">${m.source.color}</span>
+						<span style="color:var(--color-text-tertiary);">|</span>
+						<strong style="font-size:16px; color:#2c3e50; background:#f1f2f6; padding:2px 6px; border-radius:4px;">${Object.keys(m.source.quantities)[0] || ''}</strong>
 					</div>
 				</td>
 				<td>${dbInfo}</td>
@@ -1771,15 +1778,50 @@ const MappingManager = {
 		}
 
 		const nameKeywords = mapping.source.productName.split(/[\s-]+/).filter((k) => k.length > 1);
-		const colorKeyword = mapping.source.color;
+		const colorKeyword = mapping.source.color || '';
 		const sizeKeyword = Object.keys(mapping.source.quantities)[0] || '';
+
+		// 한국어 색상명 -> CSS 컬러 맵핑
+		const colorMap = {
+			검정: '#2c3e50',
+			블랙: '#2c3e50',
+			네이비: '#1a2a6c',
+			청: '#3498db',
+			빨강: '#e74c3c',
+			레드: '#e74c3c',
+			핑크: '#ff7675',
+			분홍: '#ff7675',
+			하양: '#ffffff',
+			화이트: '#ffffff',
+			아이: '#f9f9f9',
+			베이지: '#f5f5dc',
+			노랑: '#f1c40f',
+			옐로우: '#f1c40f',
+			초록: '#27ae60',
+			그린: '#27ae60',
+			회색: '#95a5a6',
+			그레이: '#95a5a6',
+			먹색: '#34495e',
+			브라운: '#a1887f',
+			갈색: '#a1887f',
+			카멜: '#c19a6b',
+			소라: '#a2d2ff',
+			민트: '#55efc4',
+		};
+		const bgColor = colorMap[colorKeyword] || '#bdc3c7';
+		const textColor = ['하양', '화이트', '아이', '베이지', '옐로우', '노랑'].includes(colorKeyword)
+			? '#333'
+			: '#fff';
 
 		helperArea.innerHTML = `
 			<p class="helper-label">💡 키워드 추천 (클릭하여 추가):</p>
 			<div class="keywords-list">
 				${nameKeywords.map((k) => `<span class="clickable-keyword" onclick="MappingManager.addKeyword('${k.replace(/'/g, "\\'")}')">${k}</span>`).join('')}
-				<span class="clickable-keyword" onclick="MappingManager.addKeyword('${colorKeyword.replace(/'/g, "\\'")}')">${colorKeyword}</span>
-				<span class="clickable-keyword" onclick="MappingManager.addKeyword('${sizeKeyword.replace(/'/g, "\\'")}')">${sizeKeyword}</span>
+				<span class="clickable-keyword keyword-color"
+					style="background-color:${bgColor}; color:${textColor};"
+					onclick="MappingManager.addKeyword('${colorKeyword.replace(/'/g, "\\'")}')">🎨 ${colorKeyword}</span>
+				<span class="clickable-keyword keyword-size"
+					onclick="MappingManager.addKeyword('${sizeKeyword.replace(/'/g, "\\'")}')">📏 ${sizeKeyword}</span>
 			</div>
 		`;
 	},
@@ -2069,6 +2111,41 @@ const MappingManager = {
 		if (feedList) feedList.innerHTML = '<div class="feed-empty">활동 없음</div>';
 
 		UIController.showToast('모든 매핑 정보가 초기화되었습니다.', 'success');
+	},
+
+	// [중요] 이지어드민 업로드 파일 서버 생성 및 다운로드
+	async generateEzAdminFile() {
+		const successMappings = this.mappings.filter((m) => m.status === 'success' && m.target);
+		if (successMappings.length === 0) {
+			UIController.showToast('매칭 성공한 항목이 없습니다. 먼저 매핑을 진행해주세요.', 'warning');
+			return;
+		}
+
+		UIController.showToast('이지어드민 업로드 파일을 생성 중입니다...', 'info');
+
+		try {
+			const response = await fetch(`${DatabaseManager.baseUrl}/generate-ezadmin`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ data: successMappings }),
+			});
+
+			if (!response.ok) throw new Error('파일 생성 실패');
+
+			const blob = await response.blob();
+			const url = window.URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `EzAdmin_Upload_${new Date().toISOString().split('T')[0]}.csv`;
+			document.body.appendChild(a);
+			a.click();
+			window.URL.revokeObjectURL(url);
+
+			UIController.showToast('파일 생성이 완료되었습니다! 다운로드 항목을 확인하세요.', 'success');
+		} catch (error) {
+			console.error('File Generation Error:', error);
+			UIController.showToast('파일 생성 중 서버 오류가 발생했습니다.', 'error');
+		}
 	},
 
 	async downloadMappingDebug() {

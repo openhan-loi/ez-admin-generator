@@ -261,6 +261,41 @@ app.delete('/api/db/lock', (req, res) => {
 	res.json({ success: true });
 });
 
+// ---------- API 엔드포인트: 이지어드민 업로드 파일 생성 ----------
+app.post('/api/generate-ezadmin', (req, res) => {
+	const { data } = req.body;
+	if (!data || !Array.isArray(data)) {
+		return res.status(400).json({ error: 'Invalid data' });
+	}
+
+	// 이지어드민 업로드 양식 헤더 (표준 6개 필드)
+	const headers = ['도매처', '상품명', '옵션명', '수량', '바코드', '메모'];
+	let csv = '\uFEFF' + headers.join(',') + '\n';
+
+	data.forEach((item) => {
+		// 매핑 성공한 항목만 처리
+		if (item.status === 'success' && item.target) {
+			const source = item.source;
+			const target = item.target;
+			const qty = Object.values(source.quantities)[0] || 0;
+
+			const row = [
+				`"${source.wholesaler}"`,
+				`"${target.productName}"`,
+				`"${target.optionName || target.option || '-'}"`,
+				qty,
+				`"${target.barcode || ''}"`,
+				`"${source.fileName} | ${source.productName} | ${source.color}"`,
+			];
+			csv += row.join(',') + '\n';
+		}
+	});
+
+	res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+	res.setHeader('Content-Disposition', `attachment; filename=EzAdmin_Upload_${Date.now()}.csv`);
+	res.send(csv);
+});
+
 const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => {
 	console.log(`🚀 Supabase 영구 데이터베이스 연동 및 명칭 교정 완료!`);
