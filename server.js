@@ -133,9 +133,12 @@ app.delete('/api/ignored-items/all', (req, res) => {
 	});
 });
 
-app.listen(PORT, () => {
+const HOST = '0.0.0.0'; // Render 배포 시 필수 설정: 모든 IP로부터의 접속 허용
+
+app.listen(PORT, HOST, () => {
 	console.log(`=================================================`);
-	console.log(`🚀 클라우드 매핑 서버 시작: http://localhost:${PORT}`);
-	console.log(`📡 팀원들과 위 주소로 동시 접속하여 작업하세요!`);
+	console.log(`🚀 클라우드 매핑 서버 온라인!`);
+	console.log(`포트: ${PORT} | 호스트: ${HOST}`);
+	console.log(`📡 Render 대시보드에서 제공하는 URL로 접속하세요.`);
 	console.log(`=================================================`);
 });
