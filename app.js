@@ -1912,25 +1912,10 @@ const MappingManager = {
 		const keywords = query.toLowerCase().split(/\s+/);
 		const currentWholesaler = this.mappings[this.currentManualIdx].source.wholesaler;
 
-		// 유연한 매칭을 위한 정규화 (공백 무시)
-		const normalize = (str) =>
-			String(str || '')
-				.replace(/\s/g, '')
-				.toLowerCase();
-		const sWholesalerNorm = normalize(currentWholesaler);
-
 		// 캐시된 데이터를 사용하여 즉시 검색 (초고속)
 		const dbProducts = await DatabaseManager.getAll();
 		let results = dbProducts.filter((p) => {
-			// [수정] 도매인 매칭 유연화
-			const dbWholesalerNorm = normalize(p.wholesaler);
-			if (
-				dbWholesalerNorm !== sWholesalerNorm &&
-				!dbWholesalerNorm.includes(sWholesalerNorm) &&
-				!sWholesalerNorm.includes(dbWholesalerNorm)
-			) {
-				return false;
-			}
+			if (p.wholesaler !== currentWholesaler) return false;
 
 			const fullText = (
 				p.productName +
