@@ -41,9 +41,23 @@ app.post('/api/products/sync', async (req, res) => {
 	const products = req.body;
 	if (!Array.isArray(products)) return res.status(400).json({ error: 'Invalid data format' });
 
-	// Supabase의 upsert 기능을 사용하여 중복은 덮어쓰고 신규는 추가함
-	const { error } = await supabase.from('products').upsert(products, { onConflict: 'productCode' });
-	if (error) return res.status(500).json({ error: error.message });
+	// Supabase 테이블 컬럼명(option)과 앱의 필드명(optionName) 일치화 작업
+	const sanitizedProducts = products.map((p) => ({
+		productCode: String(p.productCode),
+		wholesaler: p.wholesaler,
+		productName: p.productName,
+		option: p.optionName || p.option, // optionName이 있으면 사용, 없으면 기 존재하던 option 사용
+		barcode: p.barcode,
+		stock: parseInt(p.stock) || 0,
+	}));
+
+	const { error } = await supabase
+		.from('products')
+		.upsert(sanitizedProducts, { onConflict: 'productCode' });
+	if (error) {
+		console.error('Supabase Sync Error:', error);
+		return res.status(500).json({ error: error.message });
+	}
 	res.json({ success: true, count: products.length });
 });
 
