@@ -385,8 +385,12 @@ const UIController = {
 		const productMap = new Map();
 		products.forEach((p) => productMap.set(p.productCode, p));
 
-		// 최신순 정렬
-		const sorted = [...memories].sort((a, b) => b.timestamp - a.timestamp);
+		// 최신순 정렬 (Date 객체 변환 후 비교하여 정확한 역순 구현)
+		const sorted = [...memories].sort((a, b) => {
+			const dateA = a.timestamp ? new Date(a.timestamp) : new Date(0);
+			const dateB = b.timestamp ? new Date(b.timestamp) : new Date(0);
+			return dateB - dateA;
+		});
 
 		tbody.innerHTML = '';
 		sorted.slice(0, 100).forEach((m) => {
