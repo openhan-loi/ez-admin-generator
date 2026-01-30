@@ -1,7 +1,0 @@
-node_modules
-database.sqlite
-.env
-backup_20260130
-.DS_Store
-*.xlsx
-*.csv

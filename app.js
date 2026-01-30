@@ -1113,6 +1113,56 @@ const ExcelAnalyzer = {
 			UIController.showToast('전체 분석이 완료되었습니다!', 'success');
 		}
 	},
+
+	renderCompleteStats(groups, timestampFull) {
+		const statsGrid = document.getElementById('complete-stats-summary');
+		const filesList = document.getElementById('generated-files-list');
+		if (!statsGrid || !filesList) return;
+
+		statsGrid.innerHTML = '';
+		filesList.innerHTML = '';
+
+		let totalQty = 0;
+		let totalFiles = 0;
+
+		for (const [wholesaler, items] of Object.entries(groups)) {
+			const qty = items.reduce((sum, m) => {
+				return sum + Object.values(m.source.quantities).reduce((a, b) => a + (parseInt(b) || 0), 0);
+			}, 0);
+			totalQty += qty;
+			totalFiles++;
+
+			// 1. 통계 그리드 아이템 추가
+			const statsItem = document.createElement('div');
+			statsItem.className = 'stats-item';
+			statsItem.innerHTML = `
+				<div class="stats-label">${wholesaler}</div>
+				<div class="stats-value">${qty.toLocaleString()} <small>pcs</small></div>
+			`;
+			statsGrid.appendChild(statsItem);
+
+			// 2. 파일 목록 아이템 추가
+			const fileName = `[${wholesaler}]_${timestampFull}.xlsx`;
+			const fileItem = document.createElement('div');
+			fileItem.className = 'download-item';
+			fileItem.innerHTML = `
+				<div class="file-info">
+					<span class="file-icon">📊</span>
+					<span class="file-name">${fileName}</span>
+				</div>
+				<button class="btn btn-ghost btn-sm" onclick="MappingManager.reDownloadFile('${wholesaler.replace(/'/g, "\\'")}', '${timestampFull}')">
+					재다운로드
+				</button>
+			`;
+			filesList.appendChild(fileItem);
+		}
+
+		// 요약 텍스트 업데이트
+		const summaryText = document.getElementById('complete-summary-text');
+		if (summaryText) {
+			summaryText.innerHTML = `총 <strong>${totalFiles}</strong>개의 도매인 파일(합계 <strong>${totalQty.toLocaleString()}</strong>개 수량)이 성공적으로 생성되었습니다.`;
+		}
+	},
 };
 
 // AppState 확장: DB 통계 갱신 (로딩 상태 포함)
@@ -1222,6 +1272,13 @@ const EventListeners = {
 		// 매핑 데이터 초기화 버튼
 		document.getElementById('clear-mapping-data-btn')?.addEventListener('click', () => {
 			MappingManager.clearAllMappingData();
+		});
+
+		// [신규] 헤더 새로고침 버튼
+		document.getElementById('header-refresh-btn')?.addEventListener('click', () => {
+			if (confirm('모든 데이터를 초기화하고 처음부터 다시 시작하시겠습니까?')) {
+				location.reload();
+			}
 		});
 
 		// [신규] 이지어드민 업로드 파일 생성 버튼
@@ -1580,10 +1637,20 @@ const MappingManager = {
 			const isColorMatch = sColorNorm && dbOptionNorm.includes(sColorNorm);
 			let isPreciseColor = isColorMatch;
 			if (isColorMatch && sColorNorm !== dbOptionNorm) {
-				const prefixes = ['진', '연', '딥', '라이트', '다크', '핫'];
+				const prefixes = ['진', '연', '딥', '라이트', '다크', '핫', '배색', '형광'];
 				const isSourceBasic = !prefixes.some((p) => sColorNorm.startsWith(p));
 				const isTargetExtended = prefixes.some((p) => dbOptionNorm.includes(p + sColorNorm));
+
+				// 1. 소스는 단순(핑크)인데 타겟이 상세(진핑크)인 경우 방지
 				if (isSourceBasic && isTargetExtended && sColorNorm.length < dbOptionNorm.length) {
+					isPreciseColor = false;
+				}
+				// 2. 소스는 상세(진핑크)인데 타겟이 단순(핑크)인 경우도 방지 (포함관계는 OK이나 정확하진 않음)
+				if (
+					!isSourceBasic &&
+					!dbOptionNorm.startsWith(sColorNorm) &&
+					sColorNorm.length > dbOptionNorm.length
+				) {
 					isPreciseColor = false;
 				}
 			}
@@ -1845,10 +1912,25 @@ const MappingManager = {
 		const keywords = query.toLowerCase().split(/\s+/);
 		const currentWholesaler = this.mappings[this.currentManualIdx].source.wholesaler;
 
+		// 유연한 매칭을 위한 정규화 (공백 무시)
+		const normalize = (str) =>
+			String(str || '')
+				.replace(/\s/g, '')
+				.toLowerCase();
+		const sWholesalerNorm = normalize(currentWholesaler);
+
 		// 캐시된 데이터를 사용하여 즉시 검색 (초고속)
 		const dbProducts = await DatabaseManager.getAll();
 		let results = dbProducts.filter((p) => {
-			if (p.wholesaler !== currentWholesaler) return false;
+			// [수정] 도매인 매칭 유연화
+			const dbWholesalerNorm = normalize(p.wholesaler);
+			if (
+				dbWholesalerNorm !== sWholesalerNorm &&
+				!dbWholesalerNorm.includes(sWholesalerNorm) &&
+				!sWholesalerNorm.includes(dbWholesalerNorm)
+			) {
+				return false;
+			}
 
 			const fullText = (
 				p.productName +
@@ -2180,6 +2262,42 @@ const MappingManager = {
 		}
 
 		UIController.showToast('모든 도매인별 엑셀 파일 다운로드가 완료되었습니다.', 'success');
+
+		// 3. 작업 완료 탭으로 이동 및 결과 표시
+		AppState.switchTab('complete-tab');
+		UIController.renderCompleteStats(groups, timestampFull);
+	},
+
+	// 완료 화면에서 특정 도매인 파일 다시 다운로드
+	reDownloadFile(wholesaler, timestamp) {
+		const successMappings = this.mappings.filter(
+			(m) =>
+				m.status === 'success' &&
+				m.target &&
+				(m.source.wholesaler === wholesaler || (!m.source.wholesaler && wholesaler === '미지정')),
+		);
+
+		if (successMappings.length === 0) return;
+
+		try {
+			const yymmddShort = timestamp.substring(0, 6);
+			const excelData = successMappings.map((m) => {
+				const qty = Object.values(m.source.quantities).reduce((a, b) => a + (parseInt(b) || 0), 0);
+				return {
+					상품코드: m.target.productCode,
+					수량: qty,
+					메모: `${yymmddShort}_${m.source.fileName}`,
+				};
+			});
+
+			const worksheet = XLSX.utils.json_to_sheet(excelData);
+			worksheet['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 40 }];
+			const workbook = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(workbook, worksheet, 'EzAdmin_Upload');
+			XLSX.writeFile(workbook, `[${wholesaler}]_${timestamp}.xlsx`);
+		} catch (e) {
+			console.error('Redownload error:', e);
+		}
 	},
 
 	async downloadMappingDebug() {
