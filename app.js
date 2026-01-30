@@ -106,6 +106,11 @@ const AppState = {
 		} else {
 			// 그 외 탭에서는 모든 플로팅 버튼 숨김 (분석 탭은 내부 showSection에서 제어)
 			document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
+
+			// [추가] 제품 DB 관리 탭 진입 시 실시간 통계 갱신
+			if (tabId === 'db-tab') {
+				this.updateDBStats();
+			}
 		}
 	},
 
@@ -1116,17 +1121,26 @@ const ExcelAnalyzer = {
 	},
 };
 
-// AppState 확장: DB 통계 갱신
+// AppState 확장: DB 통계 갱신 (로딩 상태 포함)
 AppState.updateDBStats = async function () {
-	if (typeof DatabaseManager !== 'undefined' && DatabaseManager.getAll) {
-		const products = await DatabaseManager.getAll();
-		const countEl = document.getElementById('total-db-count');
-		if (countEl) countEl.textContent = products.length.toLocaleString();
+	const countEl = document.getElementById('total-db-count');
+	const statusArea = document.getElementById('db-status-area');
 
-		const statusArea = document.getElementById('db-status-area');
-		if (statusArea) {
-			if (products.length > 0) statusArea.classList.remove('hidden');
-			else statusArea.classList.add('hidden');
+	if (countEl) countEl.textContent = '데이터 조회 중...';
+	if (statusArea) statusArea.classList.remove('hidden');
+
+	if (typeof DatabaseManager !== 'undefined' && DatabaseManager.getAll) {
+		try {
+			const products = await DatabaseManager.getAll();
+			if (countEl) {
+				countEl.innerHTML = `<strong style="color:var(--color-primary)">${products.length.toLocaleString()}</strong> 개`;
+			}
+			if (statusArea) {
+				// 데이터가 0개여도 일단 '0개'라고 명확히 표시 (연결 확인용)
+				statusArea.classList.remove('hidden');
+			}
+		} catch (e) {
+			if (countEl) countEl.textContent = '조회 실패';
 		}
 	}
 };
