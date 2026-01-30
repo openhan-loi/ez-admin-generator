@@ -1622,41 +1622,57 @@ const MappingManager = {
 	},
 
 	findBestMatch(source, dbList) {
+		// 유연한 매칭을 위한 정규화 함수 (공백 제거, 소문자화)
+		const normalize = (str) =>
+			String(str || '')
+				.replace(/\s/g, '')
+				.toLowerCase();
+
 		const sName = source.productName.trim();
+		const sNameNorm = normalize(sName);
 		const sColor = source.color.trim();
-		const sWholesaler = source.wholesaler.trim();
-		// 패킹리스트에서 추출된 사이즈 (예: "140")
-		const sSize = Object.keys(source.quantities)[0] || '';
+		const sColorNorm = normalize(sColor);
+		const sWholesalerNorm = normalize(source.wholesaler);
+		const sSize = normalize(Object.keys(source.quantities)[0] || '');
 
 		let bestMatch = { product: null, status: 'danger', similarity: 0 };
 
 		for (const db of dbList) {
-			// 도매인이 다르면 아예 무시 (사용자 요청: 도매인 일치 필수)
-			if (db.wholesaler !== sWholesaler) continue;
+			// 1. 도매인 매칭 (정규화 대조: 공백/대소문자 무시)
+			if (normalize(db.wholesaler) !== sWholesalerNorm) continue;
 
-			// DB 상품명에서 카테고리 분리 (마지막 하이픈 기준)
 			const dbFullName = db.productName;
 			const dbPureName = dbFullName.split('-').pop().trim();
-			const dbOption = db.optionName.trim();
+			const dbOption = db.optionName || '';
+			const dbOptionNorm = normalize(dbOption);
 
-			// 1단계: 완전 일치 (상품명 정규화 대조 + 옵션 대조(색상+사이즈 필수))
-			// dbOption에 컬러와 사이즈가 모두 정확히 포함되어야 성공으로 간주
-			const nameMatch = dbFullName === sName || dbPureName === sName;
-			const optionMatch = dbOption.includes(sColor) && dbOption.includes(sSize);
+			// 2. [완전 일치] 상품명(전체 혹은 순수명)이 같고, 옵션에 컬러와 사이즈가 포함된 경우
+			const isNameExactlyMatch =
+				normalize(dbFullName) === sNameNorm || normalize(dbPureName) === sNameNorm;
 
-			if (nameMatch && optionMatch) {
+			// 사이즈는 숫자가 포함되어 있는지 한 번 더 확인 (예: 140 vs 140호)
+			const isSizeMatch = sSize && dbOptionNorm.includes(sSize);
+			const isColorMatch = sColorNorm && dbOptionNorm.includes(sColorNorm);
+
+			if (isNameExactlyMatch && isColorMatch && isSizeMatch) {
 				return { product: db, status: 'success', similarity: 100 };
 			}
 
-			// 2단계: 상품명은 맞는데 색상/사이즈가 애매한 경우 (퍼지 매칭)
-			if (nameMatch || sName.includes(dbPureName)) {
-				const colorSim = this.calculateSimilarity(sColor, dbOption);
-				const sizeSim = dbOption.includes(sSize) ? 100 : 0; // 사이즈는 가급적 정확해야 함
+			// 3. [부분 일치/퍼지 매칭] 상품명이 포함되거나 유사한 경우
+			if (
+				isNameExactlyMatch ||
+				sNameNorm.includes(normalize(dbPureName)) ||
+				normalize(dbPureName).includes(sNameNorm)
+			) {
+				const colorSim = this.calculateSimilarity(sColorNorm, dbOptionNorm);
+				const sizeSim = isSizeMatch ? 100 : 0;
 
-				// 색상 유사도가 높고 사이즈가 일치하면 후보로 등록
+				// 가중치 합산 (색상 70%, 사이즈 30%)
 				const totalSim = colorSim * 0.7 + sizeSim * 0.3;
+
 				if (totalSim > 60) {
-					const status = colorSim > 85 && sizeSim === 100 ? 'success' : 'warning';
+					// 아주 높은 유사도면 성공으로 간주
+					const status = colorSim > 80 && isSizeMatch ? 'success' : 'warning';
 					if (totalSim > bestMatch.similarity) {
 						bestMatch = { product: db, status: status, similarity: totalSim };
 					}
