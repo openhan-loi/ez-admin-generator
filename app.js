@@ -522,8 +522,8 @@ const FileHandler = {
 					AppState.fileSheetCache[cacheKey] = sheetNames;
 				}
 
-				// [수정] slice(1) 제거: 0번 시트(첫 번째 시트)도 반드시 포함되어야 함
-				sheetNames.forEach((sheetName) => {
+				// [수정] 다시 slice(1) 적용: 사용자의 요청으로 첫 번째 시트는 무시함
+				sheetNames.slice(1).forEach((sheetName) => {
 					const item = document.createElement('div');
 					item.className = 'sheet-config-item';
 
