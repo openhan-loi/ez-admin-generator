@@ -24,15 +24,35 @@ let dbLock = {
 
 // ---------- API 엔드포인트: 제품 마스터 ----------
 app.get('/api/products', async (req, res) => {
-	const { data, error } = await supabase.from('products').select('*');
-	if (error) return res.status(500).json({ error: error.message });
+	try {
+		let allData = [];
+		let from = 0;
+		const step = 1000;
 
-	// 앱 규격(optionName)에 맞게 변환하여 응답
-	const mappedData = data.map((p) => ({
-		...p,
-		optionName: p.option, // DB의 option을 앱의 optionName으로 변환
-	}));
-	res.json(mappedData);
+		while (true) {
+			const { data, error } = await supabase
+				.from('products')
+				.select('*')
+				.range(from, from + step - 1);
+
+			if (error) throw error;
+			if (!data || data.length === 0) break;
+
+			allData = allData.concat(data);
+			if (data.length < step) break;
+			from += step;
+		}
+
+		// 앱 규격(optionName)에 맞게 변환하여 응답
+		const mappedData = allData.map((p) => ({
+			...p,
+			optionName: p.option,
+		}));
+		res.json(mappedData);
+	} catch (error) {
+		console.error('Fetch products error:', error);
+		res.status(500).json({ error: error.message });
+	}
 });
 
 app.get('/api/products/count', async (req, res) => {

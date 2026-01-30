@@ -8,12 +8,6 @@ const AppState = {
 	sheetWholesalers: {}, // { "fileName_sheetName": "wholesalerName" }
 
 	init() {
-		// 0. 사용자 식별 ID 생성 (세션 유지용)
-		if (!localStorage.getItem('ez_user_id')) {
-			localStorage.setItem('ez_user_id', 'User_' + Math.random().toString(36).substr(2, 5));
-		}
-		this.userId = localStorage.getItem('ez_user_id');
-
 		// 1. 데이터 먼저 로드 (새로고침 시 사라짐 방지 최우선)
 		this.loadWholesalers();
 
@@ -52,15 +46,8 @@ const AppState = {
 		const targetContent = document.getElementById(tabId);
 		if (targetContent) {
 			targetContent.classList.add('active');
-
-			// [버그 수정] 모든 내부 섹션에 active를 강제로 주는 대신,
-			// 만약 활성화된 섹션이 하나도 없다면 첫 번째 섹션만 활성화합니다.
-			// 이를 통해 분석 탭 등 여러 섹션이 공존하는 곳에서 UI가 겹치는 문제를 방지합니다.
-			const activeSections = targetContent.querySelectorAll('.section.active');
-			if (activeSections.length === 0) {
-				const firstSection = targetContent.querySelector('.section');
-				if (firstSection) firstSection.classList.add('active');
-			}
+			// 내부 섹션 활성화 복구 (보이게 하기)
+			targetContent.querySelectorAll('.section').forEach((s) => s.classList.add('active'));
 		}
 
 		// 3. 플로팅 버튼 가시성 제어 (분석 및 매핑 탭에서 허용)
@@ -73,116 +60,36 @@ const AppState = {
 			}
 		}
 
-		// 4. 진행 바 연동 (진행 상황에 따라 1~4단계 표시)
-		if (tabId === 'complete-tab') UIController.updateProgress(4);
-		else if (tabId === 'mapping-tab') UIController.updateProgress(3);
+		// 4. 진행 바 연동 (3번 매핑 단계로 표시)
+		if (tabId === 'mapping-tab') UIController.updateProgress(3);
 		else if (tabId === 'analysis-tab' && AppState.analyzedData.length > 0)
 			UIController.updateProgress(2);
 		else if (tabId === 'analysis-tab') UIController.updateProgress(1);
 
-		// 5. 플로팅 버튼 및 탭별 전용 노출 제어
-		if (tabId === 'analysis-tab') {
-			// [버그 수정] 분석 탭 진입 시 현재 데이터 상태에 따라 버튼 가시성 명시적 복구
-			if (this.analyzedData && this.analyzedData.length > 0) {
-				document.getElementById('analyze-btn')?.classList.add('hidden');
-				document.getElementById('next-step-btn')?.classList.remove('hidden');
-			} else {
-				document.getElementById('analyze-btn')?.classList.remove('hidden');
-				document.getElementById('next-step-btn')?.classList.add('hidden');
-			}
-			document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
-		} else if (tabId === 'mapping-tab') {
-			// 매핑 탭에서는 분석 관련 버튼 숨김
+		// 5. 매핑 탭에 막 들어왔을 때, 자동 매핑을 한 번도 안 했다면 시작 버튼 노출
+		if (tabId === 'mapping-tab') {
+			// 매핑 탭에서는 분석/다음단계 버튼 무조건 숨김
 			document.getElementById('analyze-btn')?.classList.add('hidden');
 			document.getElementById('next-step-btn')?.classList.add('hidden');
 
-			// 자동 매핑 전이라면 시작 버튼 노출
 			if (MappingManager.mappings.length === 0) {
-				document.getElementById('start-auto-mapping-btn')?.classList.remove('hidden');
-			} else {
-				document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
+				const startBtn = document.getElementById('start-auto-mapping-btn');
+				if (startBtn) startBtn.classList.remove('hidden');
 			}
-		} else {
+		} else if (tabId !== 'analysis-tab') {
 			// 그 외 탭(DB관리 등)에서는 모든 플로팅 버튼 숨김
 			document.getElementById('analyze-btn')?.classList.add('hidden');
 			document.getElementById('next-step-btn')?.classList.add('hidden');
 			document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
 		}
-
-		// [신규] 6. DB 관리 탭 진입 시 실시간 잠금 감시 시작
-		if (tabId === 'database-tab') {
-			this.startLockMonitoring();
-		} else {
-			this.stopLockMonitoring();
-		}
 	},
 
-	lockMonitorInterval: null,
-	startLockMonitoring() {
-		this.stopLockMonitoring(); // 중복 방지
-		const monitor = async () => {
-			try {
-				const lock = await DatabaseManager.checkLock();
-				const uploadArea = document.getElementById('db-file-upload-area');
-				const selectBtn = document.getElementById('db-select-file-btn');
-				const helperText = document.querySelector('#database-tab .section-description');
-
-				if (lock && lock.isLocked) {
-					uploadArea.classList.add('locked');
-					if (selectBtn) {
-						selectBtn.disabled = true;
-						selectBtn.innerText = '다른 사용자가 업로드 중...';
-					}
-					if (helperText) {
-						const startTime = new Date(lock.startTime).toLocaleTimeString();
-						helperText.innerHTML = `<span style="color:var(--color-danger); font-weight:bold;">⚠️ 현황: ${lock.user}님이 ${startTime}부터 업로드 중입니다. 잠시만 기다려주세요.</span>`;
-					}
-				} else {
-					uploadArea.classList.remove('locked');
-					if (selectBtn) {
-						selectBtn.disabled = false;
-						selectBtn.innerText = 'DB 파일 선택';
-					}
-					if (helperText) {
-						helperText.innerText =
-							"이지어드민 '현재고조회' 파일을 업로드하여 기준 DB를 구축합니다.";
-					}
-				}
-			} catch (e) {
-				console.error('Lock monitor error:', e);
-			}
-		};
-		monitor(); // 즉시 실행
-		this.lockMonitorInterval = setInterval(monitor, 3000); // 3초마다 확인
-	},
-
-	stopLockMonitoring() {
-		if (this.lockMonitorInterval) {
-			clearInterval(this.lockMonitorInterval);
-			this.lockMonitorInterval = null;
-		}
-	},
-
-	async loadWholesalers() {
-		try {
-			const response = await fetch('/api/wholesalers');
-			const data = await response.json();
-			// API 데이터: [{name, isDefault}, ...]
-			this.wholesalers = data.map((w) => w.name);
-			const defaultItem = data.find((w) => w.isDefault);
-			if (defaultItem) this.selectedWholesaler = defaultItem.name;
-
+	loadWholesalers() {
+		const saved = localStorage.getItem('wholesalers');
+		if (saved) {
+			this.wholesalers = JSON.parse(saved);
 			this.renderWholesalerTags();
-			this.updateWholesalerDropdowns();
-		} catch (e) {
-			console.error('Failed to load wholesalers from DB:', e);
-			// 백업용 로컬스토리지 (서버 문제 시 대비)
-			const saved = localStorage.getItem('wholesalers');
-			if (saved) {
-				this.wholesalers = JSON.parse(saved);
-				this.renderWholesalerTags();
-				this.updateWholesalerDropdowns();
-			}
+			this.updateWholesalerDropdowns(); // DB 매칭용 드롭다운 갱신
 		}
 	},
 
@@ -205,37 +112,19 @@ const AppState = {
 		localStorage.setItem('wholesalers', JSON.stringify(this.wholesalers));
 	},
 
-	async addWholesaler(name) {
+	addWholesaler(name) {
 		if (!name || this.wholesalers.includes(name)) {
 			return false;
 		}
 		this.wholesalers.push(name);
-
-		try {
-			await fetch('/api/wholesalers', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name, isDefault: false }),
-			});
-		} catch (e) {
-			console.error(e);
-		}
-
-		this.saveWholesalers(); // 로컬 백업 유지
+		this.saveWholesalers();
 		this.renderWholesalerTags();
 		this.updateWholesalerDropdowns();
 		return true;
 	},
 
-	async removeWholesaler(name) {
+	removeWholesaler(name) {
 		this.wholesalers = this.wholesalers.filter((w) => w !== name);
-
-		try {
-			await fetch(`/api/wholesalers/${encodeURIComponent(name)}`, { method: 'DELETE' });
-		} catch (e) {
-			console.error(e);
-		}
-
 		this.saveWholesalers();
 		this.renderWholesalerTags();
 		this.updateWholesalerDropdowns();
@@ -244,19 +133,8 @@ const AppState = {
 		}
 	},
 
-	async setWholesaler(name) {
+	setWholesaler(name) {
 		this.selectedWholesaler = name;
-
-		try {
-			await fetch('/api/wholesalers/default', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name }),
-			});
-		} catch (e) {
-			console.error(e);
-		}
-
 		UIController.showToast(`${name} 도매인이 기본으로 선택되었습니다.`, 'info');
 		this.updateAnalyzeButton();
 
@@ -372,16 +250,6 @@ const AppState = {
 	updateWholesalerSelect() {
 		// 전역 드롭다운이 제거되었으므로 태그 렌더링만 수행
 		this.renderWholesalerTags();
-	},
-
-	// 유틸리티: 숫자에 포함된 콤마를 제거하고 안전하게 파싱
-	parseNumber(val) {
-		if (typeof val === 'number') return val;
-		if (!val) return 0;
-		// 콤마 제거 후 정수 변환
-		const sanitized = String(val).replace(/,/g, '');
-		const parsed = parseInt(sanitized);
-		return isNaN(parsed) ? 0 : parsed;
 	},
 };
 
@@ -624,20 +492,9 @@ const FileHandler = {
 			const sheetsContainer = document.createElement('div');
 			sheetsContainer.className = 'file-card-sheets';
 
-			// [스마트 시트 필터] 시트 목록 읽기
+			// 시트 목록 읽기 (캐싱 고려 가능하지만 여기선 매번 읽음)
 			const workbook = await this.readWorkbook(file);
-			let sheetNames = workbook.SheetNames;
-
-			// 시트가 여러 개일 때, '패킹'이나 'Summary' 등 요약 성격의 시트는 자동으로 제외
-			if (sheetNames.length > 1) {
-				const skipNames = ['패킹', 'packing', 'summary', '요약', '표지'];
-				const filtered = sheetNames.filter((name) => {
-					const lowerName = name.toLowerCase();
-					return !skipNames.some((skip) => lowerName.includes(skip));
-				});
-				// 필터링 후에도 시트가 남아있다면 필터링된 목록 사용, 아니면 전체 사용(방어 코드)
-				if (filtered.length > 0) sheetNames = filtered;
-			}
+			const sheetNames = workbook.SheetNames.slice(1); // 첫 시트 무시
 
 			sheetNames.forEach((sheetName) => {
 				const item = document.createElement('div');
@@ -709,22 +566,6 @@ const FileHandler = {
 			return;
 		}
 
-		// 1. 서버 잠금 획득 시도
-		try {
-			const lockResult = await DatabaseManager.acquireLock(AppState.userId || '익명의 사용자');
-			if (!lockResult.success) {
-				const startTime = new Date(lockResult.detail.startTime).toLocaleTimeString();
-				UIController.showToast(
-					`현재 ${lockResult.detail.user}님이 ${startTime}부터 업로드 중입니다.`,
-					'warning',
-				);
-				return;
-			}
-		} catch (e) {
-			UIController.showToast('서버 상태 확인에 실패했습니다.', 'error');
-			return;
-		}
-
 		UIController.showToast(`${file.name} 데이터를 읽는 중입니다...`, 'info');
 
 		const reader = new FileReader();
@@ -760,6 +601,8 @@ const FileHandler = {
 					throw new Error('필수 컬럼(상품코드, 상품명)을 찾을 수 없습니다.');
 				}
 
+				UIController.showToast('데이터베이스에 저장 중입니다 (잠시만 기다려주세요)...', 'info');
+
 				const products = [];
 				for (let i = 1; i < jsonData.length; i++) {
 					const row = jsonData[i];
@@ -775,48 +618,16 @@ const FileHandler = {
 					});
 				}
 
-				// [진행 메타 정보]
-				const batchSize = 500; // 서버 부하 분산 및 진행률 표시를 위해 500개씩 끊어서 전송
-				const totalProducts = products.length;
-				let processedCount = 0;
-
-				UIController.showToast('데이터베이스에 저장 중입니다...', 'info');
-
-				// 업로드 중 UI로 전환 (선택 사항: 이미 로딩 바가 있다면 재사용)
-				const statusArea = document.getElementById('db-status-area');
-				if (statusArea) {
-					statusArea.classList.remove('hidden');
-					const countEl = document.getElementById('total-db-count');
-					if (countEl)
-						countEl.innerHTML = `<span class="upload-loader"></span> 저장 중... (0/${totalProducts.toLocaleString()})`;
-				}
-
-				// Chunk 단위 순차 업로드
-				for (let i = 0; i < products.length; i += batchSize) {
-					const chunk = products.slice(i, i + batchSize);
-					await DatabaseManager.saveProducts(chunk);
-
-					processedCount += chunk.length;
-					const percent = Math.floor((processedCount / totalProducts) * 100);
-
-					// 실시간 진행률 업데이트
-					const countEl = document.getElementById('total-db-count');
-					if (countEl) {
-						countEl.innerHTML = `<span class="upload-loader"></span> ${percent}% 완료 (${processedCount.toLocaleString()} / ${totalProducts.toLocaleString()})`;
-					}
-				}
-
+				// IndexedDB에 순차적으로 저장 (대량 처리에 안정적)
+				await DatabaseManager.saveProducts(products);
 				UIController.showToast(
-					`${totalProducts.toLocaleString()}건의 제품이 모두 등록되었습니다.`,
+					`${products.length.toLocaleString()}건의 제품이 등록되었습니다.`,
 					'success',
 				);
 				AppState.updateDBStats();
-			} catch (err) {
-				console.error('DB upload error:', err);
-				UIController.showToast(err.message || '저장 중 오류 발생', 'error');
-			} finally {
-				// 작업 완료 또는 오류 시 잠금 반드시 해제
-				await DatabaseManager.releaseLock();
+			} catch (error) {
+				console.error(error);
+				UIController.showToast('파일 처리 중 오류 발생: ' + error.message, 'error');
 			}
 		};
 		reader.readAsArrayBuffer(file);
@@ -1029,7 +840,7 @@ const ExcelAnalyzer = {
 			let c = row[COLOR_COL] ? String(row[COLOR_COL]).trim() : null;
 			let s =
 				SIZE_COL !== -1 && row[SIZE_COL] ? String(row[SIZE_COL]).trim().replace(/"/g, '') : null;
-			let q = QTY_COL !== -1 ? AppState.parseNumber(row[QTY_COL]) : 0;
+			let q = QTY_COL !== -1 ? parseInt(row[QTY_COL]) : 0;
 
 			// 데이터 행 판별: 품명이 있거나, 품명이 없어도 사이즈/수량이 있는 유효 행
 			if (!p && !c && !s && isNaN(q)) continue;
@@ -1116,7 +927,7 @@ const ExcelAnalyzer = {
 			if (!p) continue;
 
 			sizeMap.forEach((m) => {
-				const q = row[m.col] ? AppState.parseNumber(row[m.col]) : 0;
+				const q = row[m.col] ? parseInt(row[m.col]) : 0;
 				if (q > 0) {
 					results.push({
 						wholesaler,
@@ -1206,7 +1017,7 @@ const ExcelAnalyzer = {
 				if (!p) continue;
 
 				sizeMap.forEach((m) => {
-					const q = row[m.col] ? AppState.parseNumber(row[m.col]) : 0;
+					const q = row[m.col] ? parseInt(row[m.col]) : 0;
 					if (q > 0) {
 						results.push({
 							wholesaler,
@@ -1276,24 +1087,15 @@ const ExcelAnalyzer = {
 
 // AppState 확장: DB 통계 갱신
 AppState.updateDBStats = async function () {
-	if (typeof DatabaseManager !== 'undefined' && DatabaseManager.getCount) {
+	if (typeof DatabaseManager !== 'undefined' && DatabaseManager.getAll) {
+		const products = await DatabaseManager.getAll();
 		const countEl = document.getElementById('total-db-count');
-		if (countEl) countEl.innerHTML = '<span class="upload-loader"></span> 불러오는 중...';
+		if (countEl) countEl.textContent = products.length.toLocaleString();
 
-		try {
-			const count = await DatabaseManager.getCount();
-			if (countEl) countEl.innerText = `${count.toLocaleString()}개 등록됨`;
-
-			const statusArea = document.getElementById('db-status-area');
-			if (statusArea) {
-				if (count > 0) statusArea.classList.remove('hidden');
-				else statusArea.classList.add('hidden');
-			}
-		} catch (e) {
-			console.error('Failed to fetch DB count:', e);
-			if (countEl) countEl.innerText = '연결 오류';
-			const statusArea = document.getElementById('db-status-area');
-			if (statusArea) statusArea.classList.add('hidden');
+		const statusArea = document.getElementById('db-status-area');
+		if (statusArea) {
+			if (products.length > 0) statusArea.classList.remove('hidden');
+			else statusArea.classList.add('hidden');
 		}
 	}
 };
@@ -1382,18 +1184,6 @@ const EventListeners = {
 		document.getElementById('clear-mapping-data-btn')?.addEventListener('click', () => {
 			MappingManager.clearAllMappingData();
 		});
-
-		// 4단계: 이지어드민 업로드 파일 생성 버튼
-		document.getElementById('generate-ezauto-btn')?.addEventListener('click', () => {
-			MappingManager.generateEzAdminUploadFiles();
-		});
-
-		// [신규] 헤더 새로고침 버튼 연동
-		document.getElementById('header-refresh-btn')?.addEventListener('click', () => {
-			if (confirm('모든 데이터를 초기화하고 처음부터 다시 시작하시겠습니까?')) {
-				location.reload();
-			}
-		});
 	},
 
 	downloadExcel() {
@@ -1427,123 +1217,162 @@ const EventListeners = {
 	},
 };
 
-// ========== Database Manager (Cloud/Server API) ==========
+// ========== Database Manager (IndexedDB) ==========
 const DatabaseManager = {
-	baseUrl: '/api',
+	dbName: 'EzAdminDB',
+	storeName: 'products',
+	db: null,
 
-	async init(callback) {
-		// 서버 연결 상태 확인 용도
-		try {
-			await fetch(`${this.baseUrl}/products`);
-			console.log('✅ 클라우드 데이터 서버 연동 성공');
+	init(callback) {
+		const request = indexedDB.open(this.dbName, 2); // 버전 업그레이드
+
+		request.onupgradeneeded = (e) => {
+			const db = e.target.result;
+			if (!db.objectStoreNames.contains(this.storeName)) {
+				db.createObjectStore(this.storeName, { keyPath: 'productCode' });
+			}
+			// 매핑 기억 저장소 추가
+			if (!db.objectStoreNames.contains('mappingMemory')) {
+				db.createObjectStore('mappingMemory', { keyPath: 'mappingKey' });
+			}
+			// 매핑 제외 저장소 추가
+			if (!db.objectStoreNames.contains('ignoredItems')) {
+				db.createObjectStore('ignoredItems', { keyPath: 'ignoreKey' });
+			}
+		};
+
+		request.onsuccess = (e) => {
+			this.db = e.target.result;
 			if (callback) callback();
-		} catch (e) {
-			console.error('Server connection error:', e);
-			UIController.showToast('서버에 연결할 수 없습니다. 로컬 모드로 동작합니다.', 'warning');
+		};
+
+		request.onerror = (e) => {
+			console.error('DB Open Error:', e);
+			UIController.showToast('데이터베이스를 초기화할 수 없습니다.', 'error');
+		};
+	},
+
+	saveProducts(products) {
+		return new Promise((resolve, reject) => {
+			if (!this.db) {
+				reject(new Error('데이터베이스가 초기화되지 않았습니다.'));
+				return;
+			}
+			const transaction = this.db.transaction([this.storeName], 'readwrite');
+			const store = transaction.objectStore(this.storeName);
+
+			products.forEach((p) => store.put(p));
+
+			transaction.oncomplete = () => resolve();
+			transaction.onerror = (e) => reject(e);
+		});
+	},
+
+	getAll() {
+		return new Promise((resolve) => {
+			if (!this.db) return resolve([]);
+			try {
+				const transaction = this.db.transaction([this.storeName], 'readonly');
+				const store = transaction.objectStore(this.storeName);
+				const request = store.getAll();
+				request.onsuccess = () => resolve(request.result);
+				request.onerror = () => resolve([]);
+			} catch (e) {
+				console.error('DatabaseManager.getAll Error:', e);
+				resolve([]);
+			}
+		});
+	},
+
+	clearAll(callback) {
+		if (!this.db) return;
+		const transaction = this.db.transaction([this.storeName], 'readwrite');
+		const store = transaction.objectStore(this.storeName);
+		const request = store.clear();
+
+		request.onsuccess = () => {
 			if (callback) callback();
-		}
+		};
 	},
 
-	async saveProducts(products) {
-		const response = await fetch(`${this.baseUrl}/products/sync`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(products),
-		});
-		if (!response.ok) throw new Error('서버 데이터 저장 실패');
-		return await response.json();
-	},
-
-	// [신규] DB 작업 잠금 관련
-	async checkLock() {
-		const res = await fetch(`${this.baseUrl}/db/lock`);
-		return await res.json();
-	},
-
-	async acquireLock(userName) {
-		const res = await fetch(`${this.baseUrl}/db/lock`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ user: userName }),
-		});
-		return await res.json();
-	},
-
-	async releaseLock() {
-		await fetch(`${this.baseUrl}/db/lock`, { method: 'DELETE' });
-	},
-
-	async getAll() {
-		try {
-			const response = await fetch(`${this.baseUrl}/products`);
-			if (!response.ok) return [];
-			return await response.json();
-		} catch (e) {
-			console.error('DatabaseManager.getAll Error:', e);
-			return [];
-		}
-	},
-
-	async getCount() {
-		try {
-			const response = await fetch(`${this.baseUrl}/products/count`);
-			if (!response.ok) return { count: 0 };
-			return (await response.json()).count;
-		} catch (e) {
-			console.error('DatabaseManager.getCount Error:', e);
-			return 0;
-		}
-	},
-
-	async clearAll(callback) {
-		const response = await fetch(`${this.baseUrl}/products/all`, { method: 'DELETE' });
-		if (response.ok && callback) callback();
-	},
-
-	// 매핑 기억 관련 API 연동
-	async saveMappingMemory(mappingKey, productCode, fileName) {
-		await fetch(`${this.baseUrl}/mapping-memory`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ mappingKey, productCode, fileName }),
+	// 매핑 기억 관련 함수들
+	saveMappingMemory(mappingKey, productCode, fileName) {
+		if (!this.db) return;
+		const transaction = this.db.transaction(['mappingMemory'], 'readwrite');
+		const store = transaction.objectStore('mappingMemory');
+		store.put({
+			mappingKey,
+			productCode,
+			fileName: fileName || '',
+			timestamp: new Date().getTime(),
 		});
 	},
 
-	async getMappingMemory() {
-		const response = await fetch(`${this.baseUrl}/mapping-memory`);
-		if (!response.ok) return [];
-		return await response.json();
-	},
-
-	async removeMappingMemory(mappingKey) {
-		await fetch(`${this.baseUrl}/mapping-memory`, {
-			method: 'DELETE',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ mappingKey }),
+	getMappingMemory() {
+		return new Promise((resolve) => {
+			if (!this.db) return resolve([]);
+			try {
+				const transaction = this.db.transaction(['mappingMemory'], 'readonly');
+				const store = transaction.objectStore('mappingMemory');
+				const request = store.getAll();
+				request.onsuccess = () => resolve(request.result);
+				request.onerror = () => resolve([]);
+			} catch (e) {
+				console.error('DatabaseManager.getMappingMemory Error:', e);
+				resolve([]);
+			}
 		});
 	},
 
-	async clearMappingMemory() {
-		await fetch(`${this.baseUrl}/mapping-memory/all`, { method: 'DELETE' });
+	removeMappingMemory(mappingKey) {
+		if (!this.db) return;
+		const transaction = this.db.transaction(['mappingMemory'], 'readwrite');
+		const store = transaction.objectStore('mappingMemory');
+		store.delete(mappingKey);
 	},
 
-	// 매핑 제외 관련 API 연동
-	async saveIgnoreItem(ignoreKey) {
-		await fetch(`${this.baseUrl}/ignored-items`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ ignoreKey }),
+	clearMappingMemory() {
+		return new Promise((resolve) => {
+			if (!this.db) return resolve();
+			const transaction = this.db.transaction(['mappingMemory'], 'readwrite');
+			const store = transaction.objectStore('mappingMemory');
+			const request = store.clear();
+			request.onsuccess = () => resolve();
 		});
 	},
 
-	async getIgnoredItems() {
-		const response = await fetch(`${this.baseUrl}/ignored-items`);
-		if (!response.ok) return [];
-		return await response.json();
+	// 매핑 제외 관련 함수들
+	saveIgnoreItem(ignoreKey) {
+		if (!this.db) return;
+		const transaction = this.db.transaction(['ignoredItems'], 'readwrite');
+		const store = transaction.objectStore('ignoredItems');
+		store.put({ ignoreKey, timestamp: new Date().getTime() });
 	},
 
-	async clearIgnoredItems() {
-		await fetch(`${this.baseUrl}/ignored-items/all`, { method: 'DELETE' });
+	getIgnoredItems() {
+		return new Promise((resolve) => {
+			if (!this.db) return resolve([]);
+			try {
+				const transaction = this.db.transaction(['ignoredItems'], 'readonly');
+				const store = transaction.objectStore('ignoredItems');
+				const request = store.getAll();
+				request.onsuccess = () => resolve(request.result);
+				request.onerror = () => resolve([]);
+			} catch (e) {
+				console.error('DatabaseManager.getIgnoredItems Error:', e);
+				resolve([]);
+			}
+		});
+	},
+
+	clearIgnoredItems() {
+		return new Promise((resolve) => {
+			if (!this.db) return resolve();
+			const transaction = this.db.transaction(['ignoredItems'], 'readwrite');
+			const store = transaction.objectStore('ignoredItems');
+			const request = store.clear();
+			request.onsuccess = () => resolve();
+		});
 	},
 };
 
@@ -1558,135 +1387,128 @@ const MappingManager = {
 			return;
 		}
 
-		UIController.showToast('과거 매핑 기록 및 DB를 불러오는 중...', 'info');
+		UIController.showToast('과거 매핑 기록을 불러오는 중...', 'info');
 
-		try {
-			// 1. 필요한 데이터를 병렬로 로드 (Promise.all)
-			const memoryList = await DatabaseManager.getMappingMemory();
-			const ignoredList = await DatabaseManager.getIgnoredItems();
-			const dbProducts = await DatabaseManager.getAll();
+		// 0. 매핑 기억(Memory) 및 제외 목록(Ignored) 가져오기
+		DatabaseManager.getMappingMemory(async (memoryList) => {
+			DatabaseManager.getIgnoredItems(async (ignoredList) => {
+				UIController.showToast('지능형 자동 매핑을 시작합니다...', 'info');
 
-			if (dbProducts.length === 0) {
-				UIController.showToast('등록된 제품 DB가 없습니다. DB를 먼저 구축해주세요.', 'error');
-				return;
-			}
+				// 자동 매핑 시작 버튼 숨김 (1회용)
+				document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
 
-			UIController.showToast('지능형 자동 매핑을 시작합니다...', 'info');
-			document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
-
-			this.mappings = [];
-
-			// 2. 각 분석 행에 대해 매칭 시도
-			sourceData.forEach((item) => {
-				const mappingKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
-
-				// A. 먼저 매핑 제외 목록에 있는지 확인
-				const isIgnored = ignoredList.some((ig) => ig.ignoreKey === mappingKey);
-				if (isIgnored) {
-					this.mappings.push({ source: item, target: null, status: 'ignored', similarity: 0 });
-					return;
-				}
-
-				// B. 과거 기억에서 찾기
-				const remembered = memoryList.find((m) => m.mappingKey === mappingKey);
-
-				if (remembered) {
-					const dbProduct = dbProducts.find((p) => p.productCode === remembered.productCode);
-					if (dbProduct) {
-						this.mappings.push({
-							source: item,
-							target: dbProduct,
-							status: 'success',
-							similarity: 100,
-						});
+				// 1. DB 전체 데이터 가져오기
+				DatabaseManager.getAll(async (dbProducts) => {
+					if (dbProducts.length === 0) {
+						UIController.showToast('등록된 제품 DB가 없습니다. DB를 먼저 구축해주세요.', 'error');
 						return;
 					}
-				}
 
-				// C. 지능형 퍼지 매칭 시도
-				const match = this.findBestMatch(item, dbProducts);
-				this.mappings.push({
-					source: item,
-					target: match.product,
-					status: match.status,
-					similarity: match.similarity,
+					this.mappings = [];
+
+					// 2. 각 분석 행에 대해 매칭 시도
+					sourceData.forEach((item, idx) => {
+						const mappingKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
+
+						// A. 먼저 매핑 제외 목록에 있는지 확인
+						const isIgnored = ignoredList.some((ig) => ig.ignoreKey === mappingKey);
+						if (isIgnored) {
+							this.mappings.push({
+								source: item,
+								target: null,
+								status: 'ignored',
+								similarity: 0,
+							});
+							return;
+						}
+
+						// B. 과거 기억에서 찾기
+						const remembered = memoryList.find((m) => m.mappingKey === mappingKey);
+
+						if (remembered) {
+							const dbProduct = dbProducts.find((p) => p.productCode === remembered.productCode);
+							if (dbProduct) {
+								this.mappings.push({
+									source: item,
+									target: dbProduct,
+									status: 'success',
+									similarity: 100,
+								});
+								return;
+							}
+						}
+
+						// C. 지능형 퍼지 매칭 시도
+						const match = this.findBestMatch(item, dbProducts);
+						this.mappings.push({
+							source: item,
+							target: match.product,
+							status: match.status,
+							similarity: match.similarity,
+						});
+
+						// D. 만약 자동 매칭 성공이면 기억에 저장 및 피드 노출
+						if (match.status === 'success' && match.product) {
+							DatabaseManager.saveMappingMemory(
+								mappingKey,
+								match.product.productCode,
+								item.fileName,
+							);
+							this.addFeedItem(item, match.product, false);
+						}
+					});
+
+					this.renderMappingResults();
+					this.updateSummary();
+					UIController.showToast('자동 매핑이 완료되었습니다.', 'success');
 				});
-
-				// D. 만약 자동 매칭 성공이면 기억에 저장 및 피드 노출
-				if (match.status === 'success' && match.product) {
-					DatabaseManager.saveMappingMemory(mappingKey, match.product.productCode, item.fileName);
-					this.addFeedItem(item, match.product, false);
-				}
 			});
-
-			this.renderMappingResults();
-			this.updateSummary();
-			UIController.showToast('자동 매핑이 완료되었습니다.', 'success');
-		} catch (error) {
-			console.error('Auto mapping error:', error);
-			UIController.showToast('자동 매핑 중 오류가 발생했습니다.', 'error');
-		}
+		});
 	},
 
 	findBestMatch(source, dbList) {
-		// 유연한 매칭을 위한 정규화 함수 (공백 제거, 소문자화 + 도매인 별칭 처리)
-		const normalize = (str) => {
-			let normalized = String(str || '')
+		const normalize = (str) =>
+			String(str || '')
 				.replace(/\s/g, '')
 				.toLowerCase();
-			// 도매인 별칭 매핑 (사용자 도매인 규칙 준수용)
-			const aliasMap = {
-				담맘: 'dammom',
-				dammom: 'dammom',
-				오즈: 'oz',
-				oz: 'oz',
-				베리아이: 'veryi',
-				veryi: 'veryi',
-				공주: 'princess',
-				princess: 'princess',
-			};
-			return aliasMap[normalized] || normalized;
-		};
 
 		const sName = source.productName.trim();
 		const sNameNorm = normalize(sName);
 		const sColor = source.color.trim();
 		const sColorNorm = normalize(sColor);
-		const sWholesalerNorm = normalize(source.wholesaler);
+
+		// [원칙] 도매인은 정확히 일치해야 함
+		const sWholesaler = source.wholesaler.trim();
+
 		const sSize = normalize(Object.keys(source.quantities)[0] || '');
 
 		let bestMatch = { product: null, status: 'danger', similarity: 0 };
 
 		for (const db of dbList) {
-			// 1. 도매인 매칭 (별칭 포함 정규화 대조: 규칙 엄격 준수)
-			if (normalize(db.wholesaler) !== sWholesalerNorm) continue;
+			// 1. 도매인 매칭 (100% 철자 일치 필수)
+			if (db.wholesaler !== sWholesaler) continue;
 
+			// DB 제품 데이터 정규화
 			const dbFullName = db.productName;
-			const dbPureName = dbFullName.split('-').pop().trim();
-			const dbOption = db.optionName || '';
+			// '젤리-' 등 수식어 떼기 (하이픈 기준 마지막 요소)
+			const dbPureName = dbFullName.includes('-') ? dbFullName.split('-').pop().trim() : dbFullName;
+			const dbOption = db.option || db.optionName || '';
 			const dbOptionNorm = normalize(dbOption);
 
 			// 2. [완전 일치] 상품명(전체 혹은 순수명)이 같고, 옵션에 컬러와 사이즈가 포함된 경우
 			const isNameExactlyMatch =
 				normalize(dbFullName) === sNameNorm || normalize(dbPureName) === sNameNorm;
-
-			// 사이즈는 숫자가 포함되어 있는지 한 번 더 확인 (예: 140 vs 140호)
 			const isSizeMatch = sSize && dbOptionNorm.includes(sSize);
 
-			// [색상 매칭 강화] '진핑크', '연핑크', '핑크'를 엄격히 구분
-			// 단순히 포함(includes)만 확인하면 '핑크'가 '연핑크'에 매칭될 수 있으므로,
-			// 글자 길이가 현저히 다르거나 다른 색상 키워드가 붙어있는지 체크
+			// 핑크 vs 진핑크 엄격 구분 로직 포함
 			const isColorMatch = sColorNorm && dbOptionNorm.includes(sColorNorm);
 			let isPreciseColor = isColorMatch;
-
 			if (isColorMatch && sColorNorm !== dbOptionNorm) {
-				// 예: 찾는게 '핑크'인데 DB옵션이 '진핑크'인 경우 (부분 포함이지만 다른 색상)
 				const prefixes = ['진', '연', '딥', '라이트', '다크', '핫'];
 				const isSourceBasic = !prefixes.some((p) => sColorNorm.startsWith(p));
 				const isTargetExtended = prefixes.some((p) => dbOptionNorm.includes(p + sColorNorm));
-
 				if (isSourceBasic && isTargetExtended && sColorNorm.length < dbOptionNorm.length) {
-					isPreciseColor = false; // 기본색은 확장색(진/연)에 자동 매칭되지 않게 차단
+					isPreciseColor = false;
 				}
 			}
 
@@ -1694,20 +1516,15 @@ const MappingManager = {
 				return { product: db, status: 'success', similarity: 100 };
 			}
 
-			// 3. [부분 일치/퍼지 매칭] 상품명이 포함되거나 유사한 경우
+			// 3. [부분 일치]
 			if (
 				isNameExactlyMatch ||
 				sNameNorm.includes(normalize(dbPureName)) ||
 				normalize(dbPureName).includes(sNameNorm)
 			) {
 				const colorSim = this.calculateSimilarity(sColorNorm, dbOptionNorm);
-				const sizeSim = isSizeMatch ? 100 : 0;
-
-				// 가중치 합산 (색상 70%, 사이즈 30%)
-				const totalSim = colorSim * 0.7 + sizeSim * 0.3;
-
+				const totalSim = colorSim * 0.7 + (isSizeMatch ? 30 : 0);
 				if (totalSim > 60) {
-					// 아주 높은 유사도면 성공으로 간주
 					const status = colorSim > 80 && isSizeMatch ? 'success' : 'warning';
 					if (totalSim > bestMatch.similarity) {
 						bestMatch = { product: db, status: status, similarity: totalSim };
@@ -1832,8 +1649,6 @@ const MappingManager = {
 		document.getElementById('auto-match-count').textContent = stats.success;
 		document.getElementById('review-match-count').textContent = stats.warning;
 		document.getElementById('fail-match-count').textContent = stats.danger;
-
-		console.log('Mapping Summary Updated:', stats);
 	},
 
 	currentManualIdx: -1,
@@ -1902,51 +1717,29 @@ const MappingManager = {
 		}
 	},
 
-	async executeManualSearch(isAuto = false) {
+	executeManualSearch(isAuto = false) {
 		const query = document.getElementById('manual-search-input').value.trim();
-		if (!query) {
-			this.renderSearchResults([]);
-			return;
-		}
+		if (!query) return;
 
+		// 사용자가 직접 검색하거나 키워드를 추가한 경우에만 '최근 검색어'로 저장
 		if (!isAuto) {
 			this.lastQuery = query;
 		}
 
-		// 문자열 정규화 (공백 제거, 소문자화)
-		const clean = (str) =>
-			String(str || '')
-				.replace(/\s/g, '')
-				.toLowerCase();
+		const keywords = query.toLowerCase().split(/\s+/);
+		const currentWholesaler = this.mappings[this.currentManualIdx].source.wholesaler;
 
-		const keywords = query
-			.toLowerCase()
-			.split(/\s+/)
-			.filter((k) => k.length > 0);
-		const currentWholesalerClean = clean(this.mappings[this.currentManualIdx].source.wholesaler);
+		DatabaseManager.getAll((dbProducts) => {
+			// 도매인 필터 + 키워드 AND 검색 (상품명이나 옵션에 모든 키워드가 포함되어야 함)
+			const results = dbProducts.filter((p) => {
+				if (p.wholesaler !== currentWholesaler) return false;
 
-		// DB 데이터 로드
-		const dbProducts = await DatabaseManager.getAll();
+				const fullText = (p.productName + ' ' + p.optionName + ' ' + p.productCode).toLowerCase();
+				return keywords.every((k) => fullText.includes(k));
+			});
 
-		// [도매인 규칙 엄격 준수] 도매인 이름 매칭 우선
-		const results = dbProducts.filter((p) => {
-			// 도매인 이름이 등록된 것과 (예: dammom) 정확히 일치하는지 확인
-			if (clean(p.wholesaler) !== currentWholesalerClean) return false;
-
-			// 상품명, 옵션명, 상품코드 통합 검색
-			const productOption = p.option || p.optionName || '';
-			const fullText = (
-				(p.productName || '') +
-				' ' +
-				productOption +
-				' ' +
-				(p.productCode || '')
-			).toLowerCase();
-
-			return keywords.every((k) => fullText.includes(k));
+			this.renderSearchResults(results);
 		});
-
-		this.renderSearchResults(results);
 	},
 
 	renderSearchResults(results) {
@@ -1972,54 +1765,47 @@ const MappingManager = {
 		});
 	},
 
-	async selectProduct(productCode) {
-		const dbProducts = await DatabaseManager.getAll();
-		const selected = dbProducts.find((p) => p.productCode === productCode);
+	selectProduct(productCode) {
+		DatabaseManager.getAll((dbProducts) => {
+			const selected = dbProducts.find((p) => p.productCode === productCode);
+			if (selected) {
+				const idx = this.currentManualIdx;
+				const item = this.mappings[idx].source;
 
-		if (selected) {
-			const idx = this.currentManualIdx;
-			const item = this.mappings[idx].source;
+				this.mappings[idx].target = selected;
+				this.mappings[idx].status = 'success';
 
-			this.mappings[idx].target = selected;
-			this.mappings[idx].status = 'success';
+				// 1. 수동 매칭 결과 기억 저장
+				const mappingKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
+				DatabaseManager.saveMappingMemory(mappingKey, selected.productCode, item.fileName);
 
-			// 1. 수동 매칭 결과 기억 저장
-			const mappingKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
-			DatabaseManager.saveMappingMemory(mappingKey, selected.productCode, item.fileName);
+				// 2. 실시간 피드 추가
+				this.addFeedItem(item, selected, false, true);
 
-			// 2. 실시간 피드 추가
-			this.addFeedItem(item, selected, false, true);
+				this.renderMappingResults();
+				this.updateSummary();
+				UIController.showToast('수동 매칭이 완료되었습니다 (자동 학습됨).', 'success');
 
-			this.renderMappingResults();
-			this.updateSummary();
-			UIController.showToast('수동 매칭이 완료되었습니다 (자동 학습됨).', 'success');
-
-			// 3. 자동으로 다음 미매칭 항목 열기
-			this.autoOpenNext(idx);
-		}
+				// 3. 자동으로 다음 미매칭 항목 열기
+				this.autoOpenNext(idx);
+			}
+		});
 	},
 
 	// 매핑 제외 기능 (모달 내부용)
 	ignoreCurrentItem() {
 		const idx = this.currentManualIdx;
-		if (idx === -1 || !this.mappings[idx]) return;
-
 		const item = this.mappings[idx].source;
 		if (confirm(`'${item.productName}' 상품을 매핑에서 영구 제외할까요?`)) {
-			// 1. UI 상태부터 즉시 업데이트 (사용자 경험 최우선)
-			this.mappings[idx].status = 'ignored';
-			this.mappings[idx].target = null;
-
-			this.renderMappingResults();
-			this.updateSummary();
-
-			// 2. 백그라운드에서 DB 저장 시도 (오류 나도 OK)
 			const ignoreKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
 			DatabaseManager.saveIgnoreItem(ignoreKey);
 
+			this.mappings[idx].status = 'ignored';
+			this.renderMappingResults();
+			this.updateSummary();
 			UIController.showToast('상품이 매핑 제외 목록에 추가되었습니다.', 'info');
 
-			// 3. 자동으로 다음 미매칭 항목으로 이동
+			// 자동으로 다음 미매칭 항목 열기
 			this.autoOpenNext(idx);
 		}
 	},
@@ -2094,23 +1880,16 @@ const MappingManager = {
 		}
 	},
 
-	// 매핑 제외 기능 (테이블 행 클릭용)
+	// 매핑 제외 기능
 	ignoreItem(idx) {
-		if (!this.mappings[idx]) return;
-
 		const item = this.mappings[idx].source;
 		if (confirm(`'${item.productName}' 상품을 매핑에서 영구 제외할까요?`)) {
-			// 1. UI 상태부터 즉각 업데이트
-			this.mappings[idx].status = 'ignored';
-			this.mappings[idx].target = null;
-
-			this.renderMappingResults();
-			this.updateSummary();
-
-			// 2. 백그라운드에서 DB 저장 시도
 			const ignoreKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
 			DatabaseManager.saveIgnoreItem(ignoreKey);
 
+			this.mappings[idx].status = 'ignored';
+			this.renderMappingResults();
+			this.updateSummary();
 			UIController.showToast('상품이 매핑 제외 목록에 추가되었습니다.', 'info');
 		}
 	},
@@ -2220,7 +1999,9 @@ const MappingManager = {
 			}
 
 			memories.forEach((m) => {
+				// 키 분해 (도매인|상품명|컬러|사이즈)
 				const [wholesaler, pName, color, size] = m.mappingKey.split('|');
+				// 제품 정보 찾기
 				const product = dbProducts.find((p) => p.productCode === m.productCode);
 				const date = new Date(m.timestamp).toLocaleString();
 
@@ -2238,208 +2019,19 @@ const MappingManager = {
 				csv += row.join(',') + '\n';
 			});
 
-			// 2. 제외 목록(Ignored Items)도 추가
-			const ignoredItems = await DatabaseManager.getIgnoredItems();
-			if (ignoredItems.length > 0) {
-				csv += '\n[매핑 제외 목록]\n';
-				csv += '도매인,상품명,컬러,사이즈,처리일시\n';
-				ignoredItems.forEach((ig) => {
-					const [wholesaler, pName, color, size] = ig.ignoreKey.split('|');
-					const date = new Date(ig.timestamp).toLocaleString();
-					csv += `${wholesaler},"${pName}","${color}","${size}",${date}\n`;
-				});
-			}
-
 			const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
 			a.download = `매핑_마스터_DB_전체_${new Date().getTime()}.csv`;
 			a.click();
-
-			let msg = `총 ${memories.length}건의 매핑 기억`;
-			if (ignoredItems.length > 0) msg += ` 및 ${ignoredItems.length}건의 제외 목록`;
-			UIController.showToast(`${msg}을 다운로드했습니다.`, 'success');
+			UIController.showToast(
+				`총 ${memories.length}건의 전체 학습 데이터를 다운로드했습니다.`,
+				'success',
+			);
 		} catch (error) {
 			console.error('Debug Download Error:', error);
 			UIController.showToast('데이터 추출 중 오류가 발생했습니다.', 'error');
-		}
-	},
-
-	// ---------- 4단계: 이지어드민 업로드 파일 생성 로직 ----------
-	async generateEzAdminUploadFiles() {
-		// 1. 매칭 성공한 항목만 필터링
-		const successMappings = this.mappings.filter((m) => m.status === 'success' && m.target);
-
-		if (successMappings.length === 0) {
-			UIController.showToast(
-				'매칭 성공(초록색)한 항목이 없습니다. 먼저 매핑을 진행해주세요.',
-				'warning',
-			);
-			return;
-		}
-
-		// 수량 불일치 안내 (초록색 항목만 내보내기 때문)
-		const totalAnalyzedQty = AppState.analyzedData.reduce(
-			(sum, item) =>
-				sum + Object.values(item.quantities).reduce((a, b) => a + AppState.parseNumber(b), 0),
-			0,
-		);
-		const totalExportQty = successMappings.reduce(
-			(sum, m) =>
-				sum + Object.values(m.source.quantities).reduce((a, b) => a + AppState.parseNumber(b), 0),
-			0,
-		);
-
-		if (totalAnalyzedQty !== totalExportQty) {
-			const diff = totalAnalyzedQty - totalExportQty;
-			UIController.showToast(
-				`미매칭 항목 등으로 인해 총 ${diff}개의 수량이 제외되었습니다. (총 ${totalExportQty}개 생성)`,
-				'info',
-			);
-		}
-
-		UIController.showToast('도매인별 이지어드민 업로드 파일을 생성 중입니다...', 'info');
-
-		// 2. 도매인별 그룹화
-		const groups = {};
-		successMappings.forEach((m) => {
-			const wholesaler = m.source.wholesaler || '미지정';
-			if (!groups[wholesaler]) groups[wholesaler] = [];
-			groups[wholesaler].push(m);
-		});
-
-		const today = new Date();
-		const yymmdd =
-			today.getFullYear().toString().slice(2) +
-			String(today.getMonth() + 1).padStart(2, '0') +
-			String(today.getDate()).padStart(2, '0');
-
-		const timestamp =
-			today.getFullYear() +
-			String(today.getMonth() + 1).padStart(2, '0') +
-			String(today.getDate()).padStart(2, '0') +
-			'_' +
-			String(today.getHours()).padStart(2, '0') +
-			String(today.getMinutes()).padStart(2, '0') +
-			String(today.getSeconds()).padStart(2, '0');
-
-		const generatedFiles = [];
-
-		// 3. 도매인별로 각각 엑셀 파일 생성 및 다운로드 (1:1 매핑 유지)
-		for (const [wholesaler, items] of Object.entries(groups)) {
-			// 이지어드민 양식: A컬럼(상품코드), B컬럼(수량), C컬럼(메모)
-			const excelData = items.map((m) => {
-				const qty = Object.values(m.source.quantities).reduce(
-					(a, b) => a + AppState.parseNumber(b),
-					0,
-				);
-				return {
-					상품코드: m.target.productCode,
-					수량: qty,
-					메모: `${yymmdd}_${m.source.fileName}`,
-				};
-			});
-
-			const worksheet = XLSX.utils.json_to_sheet(excelData);
-
-			// 컬럼 너비 설정 (A: 15, B: 10, C: 40)
-			worksheet['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 40 }];
-
-			const workbook = XLSX.utils.book_new();
-			XLSX.utils.book_append_sheet(workbook, worksheet, 'EzAdmin_Upload');
-
-			const fileName = `[${wholesaler}]${timestamp}.xlsx`;
-			XLSX.writeFile(workbook, fileName);
-
-			generatedFiles.push({
-				name: fileName,
-				wholesaler: wholesaler,
-				count: items.length,
-				totalQty: excelData.reduce((sum, row) => sum + row.수량, 0),
-			});
-		}
-
-		// 4. 완료 페이지 정보 업데이트 및 탭 전환
-		this.renderCompletionPage(generatedFiles);
-		AppState.switchTab('complete-tab');
-		UIController.updateProgress(4);
-		UIController.showToast('모든 업로드 파일이 생성되었습니다!', 'success');
-	},
-
-	renderCompletionPage(files) {
-		const listContainer = document.getElementById('generated-files-list');
-		const statsContainer = document.getElementById('complete-stats-summary');
-		if (!listContainer || !statsContainer) return;
-
-		// 1. 수량 통계 계산
-		const totalAnalyzedQty = AppState.analyzedData.reduce(
-			(sum, item) =>
-				sum + Object.values(item.quantities).reduce((a, b) => a + AppState.parseNumber(b), 0),
-			0,
-		);
-
-		const totalExportQty = files.reduce((sum, f) => sum + f.totalQty, 0);
-		const diffQty = totalAnalyzedQty - totalExportQty;
-
-		// 2. 미생성 사유별 통계
-		const stats = {
-			ignored: 0,
-			failed: 0,
-			pending: 0,
-		};
-
-		this.mappings.forEach((m) => {
-			const qty = Object.values(m.source.quantities).reduce(
-				(a, b) => a + AppState.parseNumber(b),
-				0,
-			);
-			if (m.status === 'ignored') stats.ignored += qty;
-			else if (m.status === 'failed') stats.failed += qty;
-			else if (m.status === 'pending' || !m.target) stats.pending += qty;
-		});
-
-		// 3. 통계 UI 렌더링
-		statsContainer.innerHTML = `
-			<div class="stat-box primary">
-				<span class="stat-box-label">📦 분석 총 수량</span>
-				<span class="stat-box-value">${totalAnalyzedQty.toLocaleString()}</span>
-				<span class="stat-box-sub">패킹리스트 전체</span>
-			</div>
-			<div class="stat-box success">
-				<span class="stat-box-label">✅ 생성 완료</span>
-				<span class="stat-box-value">${totalExportQty.toLocaleString()}</span>
-				<span class="stat-box-sub">이지어드민 업로드용</span>
-			</div>
-			<div class="stat-box warning">
-				<span class="stat-box-label">⚠️ 미생성 수량</span>
-				<span class="stat-box-value">${diffQty.toLocaleString()}</span>
-				<div class="detail-reason-list">
-					${stats.ignored > 0 ? `<div class="reason-item"><span>매핑 제외</span><span class="reason-count">${stats.ignored.toLocaleString()}</span></div>` : ''}
-					${stats.failed > 0 ? `<div class="reason-item"><span>매칭 실패</span><span class="reason-count">${stats.failed.toLocaleString()}</span></div>` : ''}
-					${stats.pending > 0 ? `<div class="reason-item"><span>검토 필요</span><span class="reason-count">${stats.pending.toLocaleString()}</span></div>` : ''}
-				</div>
-			</div>
-		`;
-
-		// 4. 파일 목록 렌더링
-		listContainer.innerHTML = files
-			.map(
-				(f) => `
-			<div class="generated-file-item">
-				<div class="file-info">
-					<span class="file-name">${f.name}</span>
-					<span class="file-meta">${f.wholesaler} | ${f.count}개 품목 | 총 ${f.totalQty.toLocaleString()}개</span>
-				</div>
-				<button class="btn-ghost-sm" onclick="UIController.showToast('이미 다운로드되었습니다.', 'info')">다운로드됨</button>
-			</div>
-		`,
-			)
-			.join('');
-
-		const summaryText = document.getElementById('complete-summary-text');
-		if (summaryText) {
-			summaryText.innerHTML = `총 <strong>${files.length}개</strong>의 도매인별 이지어드민 업로드 파일이 생성되었습니다.`;
 		}
 	},
 };
