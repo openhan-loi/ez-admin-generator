@@ -531,9 +531,19 @@ const FileHandler = {
 				const key = `${file.name}_${sheetName}`;
 				if (AppState.sheetWholesalers[key]) {
 					select.value = AppState.sheetWholesalers[key];
-				} else if (AppState.selectedWholesaler) {
-					select.value = AppState.selectedWholesaler;
-					AppState.sheetWholesalers[key] = AppState.selectedWholesaler;
+				} else {
+					// [지능형 자동 매칭 프리셋]
+					const fName = file.name.toLowerCase();
+					if (fName.includes('롤라루')) {
+						select.value = 'growingup';
+						AppState.sheetWholesalers[key] = 'growingup';
+					} else if (fName.includes('오즈')) {
+						select.value = 'dammom';
+						AppState.sheetWholesalers[key] = 'dammom';
+					} else if (AppState.selectedWholesaler) {
+						select.value = AppState.selectedWholesaler;
+						AppState.sheetWholesalers[key] = AppState.selectedWholesaler;
+					}
 				}
 
 				select.addEventListener('change', (ev) => {
