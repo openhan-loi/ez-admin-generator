@@ -105,7 +105,40 @@ app.delete('/api/mapping-memory/all', async (req, res) => {
 	res.json({ success: true });
 });
 
-// ---------- API 엔드포인트: 제외 목록 ----------
+// ---------- API 엔드포인트: 도매인 관리 ----------
+app.get('/api/wholesalers', async (req, res) => {
+	const { data, error } = await supabase
+		.from('wholesalers')
+		.select('*')
+		.order('timestamp', { ascending: true });
+	if (error) return res.status(500).json({ error: error.message });
+	res.json(data);
+});
+
+app.post('/api/wholesalers', async (req, res) => {
+	const { name, isDefault } = req.body;
+	const { error } = await supabase
+		.from('wholesalers')
+		.upsert({ name, isDefault: isDefault || false });
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true });
+});
+
+app.delete('/api/wholesalers/:name', async (req, res) => {
+	const { name } = req.params;
+	const { error } = await supabase.from('wholesalers').delete().eq('name', name);
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true });
+});
+
+app.post('/api/wholesalers/default', async (req, res) => {
+	const { name } = req.body;
+	// 모든 도매인의 기본 설정을 끄고 지정된 것만 켬
+	await supabase.from('wholesalers').update({ isDefault: false }).neq('name', 'FORCE_UPDATE_ALL');
+	const { error } = await supabase.from('wholesalers').update({ isDefault: true }).eq('name', name);
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true });
+});
 app.get('/api/ignored-items', async (req, res) => {
 	const { data, error } = await supabase.from('ignoredItems').select('*');
 	if (error) return res.status(500).json({ error: error.message });

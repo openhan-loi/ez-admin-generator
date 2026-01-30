@@ -163,12 +163,26 @@ const AppState = {
 		}
 	},
 
-	loadWholesalers() {
-		const saved = localStorage.getItem('wholesalers');
-		if (saved) {
-			this.wholesalers = JSON.parse(saved);
+	async loadWholesalers() {
+		try {
+			const response = await fetch('/api/wholesalers');
+			const data = await response.json();
+			// API 데이터: [{name, isDefault}, ...]
+			this.wholesalers = data.map((w) => w.name);
+			const defaultItem = data.find((w) => w.isDefault);
+			if (defaultItem) this.selectedWholesaler = defaultItem.name;
+
 			this.renderWholesalerTags();
-			this.updateWholesalerDropdowns(); // DB 매칭용 드롭다운 갱신
+			this.updateWholesalerDropdowns();
+		} catch (e) {
+			console.error('Failed to load wholesalers from DB:', e);
+			// 백업용 로컬스토리지 (서버 문제 시 대비)
+			const saved = localStorage.getItem('wholesalers');
+			if (saved) {
+				this.wholesalers = JSON.parse(saved);
+				this.renderWholesalerTags();
+				this.updateWholesalerDropdowns();
+			}
 		}
 	},
 
@@ -191,19 +205,37 @@ const AppState = {
 		localStorage.setItem('wholesalers', JSON.stringify(this.wholesalers));
 	},
 
-	addWholesaler(name) {
+	async addWholesaler(name) {
 		if (!name || this.wholesalers.includes(name)) {
 			return false;
 		}
 		this.wholesalers.push(name);
-		this.saveWholesalers();
+
+		try {
+			await fetch('/api/wholesalers', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name, isDefault: false }),
+			});
+		} catch (e) {
+			console.error(e);
+		}
+
+		this.saveWholesalers(); // 로컬 백업 유지
 		this.renderWholesalerTags();
 		this.updateWholesalerDropdowns();
 		return true;
 	},
 
-	removeWholesaler(name) {
+	async removeWholesaler(name) {
 		this.wholesalers = this.wholesalers.filter((w) => w !== name);
+
+		try {
+			await fetch(`/api/wholesalers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+		} catch (e) {
+			console.error(e);
+		}
+
 		this.saveWholesalers();
 		this.renderWholesalerTags();
 		this.updateWholesalerDropdowns();
@@ -212,8 +244,19 @@ const AppState = {
 		}
 	},
 
-	setWholesaler(name) {
+	async setWholesaler(name) {
 		this.selectedWholesaler = name;
+
+		try {
+			await fetch('/api/wholesalers/default', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name }),
+			});
+		} catch (e) {
+			console.error(e);
+		}
+
 		UIController.showToast(`${name} 도매인이 기본으로 선택되었습니다.`, 'info');
 		this.updateAnalyzeButton();
 
