@@ -1233,15 +1233,24 @@ const ExcelAnalyzer = {
 
 // AppState 확장: DB 통계 갱신
 AppState.updateDBStats = async function () {
-	if (typeof DatabaseManager !== 'undefined' && DatabaseManager.getAll) {
-		const products = await DatabaseManager.getAll();
+	if (typeof DatabaseManager !== 'undefined' && DatabaseManager.getCount) {
 		const countEl = document.getElementById('total-db-count');
-		if (countEl) countEl.textContent = products.length.toLocaleString();
+		if (countEl) countEl.innerHTML = '<span class="upload-loader"></span> 불러오는 중...';
 
-		const statusArea = document.getElementById('db-status-area');
-		if (statusArea) {
-			if (products.length > 0) statusArea.classList.remove('hidden');
-			else statusArea.classList.add('hidden');
+		try {
+			const count = await DatabaseManager.getCount();
+			if (countEl) countEl.innerText = `${count.toLocaleString()}개 등록됨`;
+
+			const statusArea = document.getElementById('db-status-area');
+			if (statusArea) {
+				if (count > 0) statusArea.classList.remove('hidden');
+				else statusArea.classList.add('hidden');
+			}
+		} catch (e) {
+			console.error('Failed to fetch DB count:', e);
+			if (countEl) countEl.innerText = '연결 오류';
+			const statusArea = document.getElementById('db-status-area');
+			if (statusArea) statusArea.classList.add('hidden');
 		}
 	}
 };
