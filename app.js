@@ -80,17 +80,29 @@ const AppState = {
 			UIController.updateProgress(2);
 		else if (tabId === 'analysis-tab') UIController.updateProgress(1);
 
-		// 5. 매핑 탭에 막 들어왔을 때, 자동 매핑을 한 번도 안 했다면 시작 버튼 노출
-		if (tabId === 'mapping-tab') {
-			// 매핑 탭에서는 분석/다음단계 버튼 무조건 숨김
+		// 5. 플로팅 버튼 및 탭별 전용 노출 제어
+		if (tabId === 'analysis-tab') {
+			// [버그 수정] 분석 탭 진입 시 현재 데이터 상태에 따라 버튼 가시성 명시적 복구
+			if (this.analyzedData && this.analyzedData.length > 0) {
+				document.getElementById('analyze-btn')?.classList.add('hidden');
+				document.getElementById('next-step-btn')?.classList.remove('hidden');
+			} else {
+				document.getElementById('analyze-btn')?.classList.remove('hidden');
+				document.getElementById('next-step-btn')?.classList.add('hidden');
+			}
+			document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
+		} else if (tabId === 'mapping-tab') {
+			// 매핑 탭에서는 분석 관련 버튼 숨김
 			document.getElementById('analyze-btn')?.classList.add('hidden');
 			document.getElementById('next-step-btn')?.classList.add('hidden');
 
+			// 자동 매핑 전이라면 시작 버튼 노출
 			if (MappingManager.mappings.length === 0) {
-				const startBtn = document.getElementById('start-auto-mapping-btn');
-				if (startBtn) startBtn.classList.remove('hidden');
+				document.getElementById('start-auto-mapping-btn')?.classList.remove('hidden');
+			} else {
+				document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
 			}
-		} else if (tabId !== 'analysis-tab') {
+		} else {
 			// 그 외 탭(DB관리 등)에서는 모든 플로팅 버튼 숨김
 			document.getElementById('analyze-btn')?.classList.add('hidden');
 			document.getElementById('next-step-btn')?.classList.add('hidden');
@@ -569,9 +581,9 @@ const FileHandler = {
 			const sheetsContainer = document.createElement('div');
 			sheetsContainer.className = 'file-card-sheets';
 
-			// 시트 목록 읽기 (캐싱 고려 가능하지만 여기선 매번 읽음)
+			// 시트 목록 읽기 (시트가 1개면 무조건 표시, 2개 이상일 때만 첫 시트 선택적 제외 로직 고려 가능하나 현재는 모두 표시)
 			const workbook = await this.readWorkbook(file);
-			const sheetNames = workbook.SheetNames.slice(1); // 첫 시트 무시
+			const sheetNames = workbook.SheetNames; // 모든 시트 표시로 변경 (사용자 혼선 방지)
 
 			sheetNames.forEach((sheetName) => {
 				const item = document.createElement('div');
