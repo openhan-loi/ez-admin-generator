@@ -581,9 +581,20 @@ const FileHandler = {
 			const sheetsContainer = document.createElement('div');
 			sheetsContainer.className = 'file-card-sheets';
 
-			// 시트 목록 읽기 (시트가 1개면 무조건 표시, 2개 이상일 때만 첫 시트 선택적 제외 로직 고려 가능하나 현재는 모두 표시)
+			// [스마트 시트 필터] 시트 목록 읽기
 			const workbook = await this.readWorkbook(file);
-			const sheetNames = workbook.SheetNames; // 모든 시트 표시로 변경 (사용자 혼선 방지)
+			let sheetNames = workbook.SheetNames;
+
+			// 시트가 여러 개일 때, '패킹'이나 'Summary' 등 요약 성격의 시트는 자동으로 제외
+			if (sheetNames.length > 1) {
+				const skipNames = ['패킹', 'packing', 'summary', '요약', '표지'];
+				const filtered = sheetNames.filter((name) => {
+					const lowerName = name.toLowerCase();
+					return !skipNames.some((skip) => lowerName.includes(skip));
+				});
+				// 필터링 후에도 시트가 남아있다면 필터링된 목록 사용, 아니면 전체 사용(방어 코드)
+				if (filtered.length > 0) sheetNames = filtered;
+			}
 
 			sheetNames.forEach((sheetName) => {
 				const item = document.createElement('div');
