@@ -352,8 +352,12 @@
 							</div>
 
 							<div class="mapping-memory-list-section">
-								<div class="section-header-compact">
+								<div class="section-header-compact" style="display:flex; justify-content:space-between; align-items:center;">
 									<h3>📚 학습 데이터 관리 (최근 100건)</h3>
+									<div class="header-actions" style="display:flex; gap:10px;">
+										<input type="text" id="mapping-memory-search" class="form-input" placeholder="도매인, 상품명, 코드 등으로 검색..." style="width:250px; padding: 6px 12px; font-size:13px;" />
+										<button id="clear-all-memory-btn" class="btn btn-ghost btn-xs text-danger" style="font-size:12px;">전체 삭제</button>
+									</div>
 								</div>
 								<div class="table-responsive database-table-wrapper">
 									<table class="table">

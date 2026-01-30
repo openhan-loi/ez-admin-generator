@@ -371,7 +371,7 @@ const UIController = {
 		return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 	},
 
-	renderMappingMemoryTable(memories, products = []) {
+	renderMappingMemoryTable(memories, products = [], searchTerm = '') {
 		const tbody = document.getElementById('mapping-memory-tbody');
 		if (!tbody) return;
 
@@ -381,12 +381,32 @@ const UIController = {
 			return;
 		}
 
-		// 상품 정보 맵핑 (성능 최적화: Map 사용)
+		// 상품 정보 맵핑
 		const productMap = new Map();
 		products.forEach((p) => productMap.set(p.productCode, p));
 
-		// 최신순 정렬 (Date 객체 변환 후 비교하여 정확한 역순 구현)
-		const sorted = [...memories].sort((a, b) => {
+		// 필터링 적용
+		let filtered = memories;
+		if (searchTerm) {
+			const term = searchTerm.toLowerCase().replace(/\s/g, '');
+			filtered = memories.filter((m) => {
+				const [wholesaler, pName] = m.mappingKey.split('|');
+				const pInfo = productMap.get(m.productCode);
+				const content = (wholesaler + pName + m.productCode + (pInfo?.productName || ''))
+					.toLowerCase()
+					.replace(/\s/g, '');
+				return content.includes(term);
+			});
+		}
+
+		if (filtered.length === 0) {
+			tbody.innerHTML =
+				'<tr><td colspan="5" class="text-center text-muted">검색 결과가 없습니다.</td></tr>';
+			return;
+		}
+
+		// 최신순 정렬
+		const sorted = [...filtered].sort((a, b) => {
 			const dateA = a.timestamp ? new Date(a.timestamp) : new Date(0);
 			const dateB = b.timestamp ? new Date(b.timestamp) : new Date(0);
 			return dateB - dateA;
@@ -1345,7 +1365,8 @@ AppState.updateDBStats = async function () {
 
 			// 매핑 관리 목록 재생성 (현재 탭이 매핑 탭일 때만)
 			if (this.currentTab === 'mapping-tab') {
-				UIController.renderMappingMemoryTable(memories, products);
+				const searchTerm = document.getElementById('mapping-memory-search')?.value || '';
+				UIController.renderMappingMemoryTable(memories, products, searchTerm);
 			}
 		} catch (e) {
 			console.error('Update stats error:', e);
@@ -1449,6 +1470,33 @@ const EventListeners = {
 		// [신규] 이지어드민 업로드 파일 생성 버튼
 		document.getElementById('generate-ezauto-btn')?.addEventListener('click', () => {
 			MappingManager.generateEzAdminFile();
+		});
+
+		// [신규] 학습 데이터 검색 기능 (실시간)
+		document.getElementById('mapping-memory-search')?.addEventListener('input', (e) => {
+			if (this.memorySearchTimeout) clearTimeout(this.memorySearchTimeout);
+			this.memorySearchTimeout = setTimeout(() => {
+				AppState.updateDBStats();
+			}, 300);
+		});
+
+		// [신규] 학습 데이터 전체 삭제
+		document.getElementById('clear-all-memory-btn')?.addEventListener('click', async () => {
+			if (
+				!confirm(
+					'경고: 모든 매핑 학습 데이터를 삭제하시겠습니까?\n이후 자동 매칭 시 모든 항목을 다시 수동으로 확인해야 합니다.',
+				)
+			)
+				return;
+
+			UIController.showToast('학습 데이터 전체 삭제 중...', 'info');
+			const success = await MappingManager.clearAllMemory();
+			if (success) {
+				UIController.showToast('학습 데이터가 완전 초기화되었습니다.', 'success');
+				AppState.updateDBStats();
+			} else {
+				UIController.showToast('삭제 중 오류가 발생했습니다.', 'error');
+			}
 		});
 	},
 
@@ -2552,6 +2600,19 @@ const MappingManager = {
 		} catch (error) {
 			console.error('Debug Download Error:', error);
 			UIController.showToast('데이터 추출 중 오류가 발생했습니다.', 'error');
+		}
+	},
+
+	// 학습 데이터 전체 삭제 연동 (추가)
+	async clearAllMemory() {
+		try {
+			const res = await fetch(`${DatabaseManager.baseUrl}/mapping-memory/all`, {
+				method: 'DELETE',
+			});
+			return res.ok;
+		} catch (e) {
+			console.error('Clear All Memory error:', e);
+			return false;
 		}
 	},
 };
