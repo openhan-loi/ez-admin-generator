@@ -534,10 +534,12 @@ const FileHandler = {
 				} else {
 					// [지능형 자동 매칭 프리셋]
 					const fName = file.name.toLowerCase();
-					if (fName.includes('롤라루')) {
+					const sName = sheetName.toLowerCase();
+
+					if (fName.includes('롤라루') || sName.includes('롤라루')) {
 						select.value = 'growingup';
 						AppState.sheetWholesalers[key] = 'growingup';
-					} else if (fName.includes('오즈')) {
+					} else if (fName.includes('오즈') || sName.includes('오즈')) {
 						select.value = 'dammom';
 						AppState.sheetWholesalers[key] = 'dammom';
 					} else if (AppState.selectedWholesaler) {
