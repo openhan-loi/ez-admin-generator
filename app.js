@@ -80,6 +80,9 @@ const AppState = {
 
 		// 5. 매핑 탭에 막 들어왔을 때 프로세스
 		if (tabId === 'mapping-tab') {
+			this.currentTab = tabId;
+			this.updateDBStats();
+
 			// 매핑 탭에서는 분석/다음단계 버튼 무조건 숨김
 			document.getElementById('analyze-btn')?.classList.add('hidden');
 			document.getElementById('next-step-btn')?.classList.add('hidden');
@@ -93,8 +96,9 @@ const AppState = {
 			// 그 외 탭에서는 모든 플로팅 버튼 숨김 (분석 탭은 내부 showSection에서 제어)
 			document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
 
-			// [추가] 제품 DB 관리 탭 진입 시 실시간 통계 갱신
-			if (tabId === 'db-tab') {
+			// [추가] 제품 DB 관리 탭 진입 시 실시간 통계 및 매핑 목록 갱신
+			if (tabId === 'database-tab') {
+				this.currentTab = tabId;
 				this.updateDBStats();
 			}
 		}
@@ -365,6 +369,46 @@ const UIController = {
 		const sizes = ['Bytes', 'KB', 'MB', 'GB'];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
 		return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+	},
+
+	renderMappingMemoryTable(memories) {
+		const tbody = document.getElementById('mapping-memory-tbody');
+		if (!tbody) return;
+
+		if (!memories || memories.length === 0) {
+			tbody.innerHTML =
+				'<tr><td colspan="5" class="text-center text-muted">학습된 매핑 데이터가 없습니다.</td></tr>';
+			return;
+		}
+
+		// 최신순 정렬
+		const sorted = [...memories].sort((a, b) => b.timestamp - a.timestamp);
+
+		tbody.innerHTML = '';
+		sorted.slice(0, 100).forEach((m) => {
+			const [wholesaler, pName, color, size] = m.mappingKey.split('|');
+			const tr = document.createElement('tr');
+			const dateStr = new Date(m.timestamp).toLocaleDateString();
+
+			tr.innerHTML = `
+				<td><div class="mapping-key-display"><strong>${wholesaler}</strong><br><small>${pName}</small></div></td>
+				<td>${color} / ${size}</td>
+				<td><div class="mapping-target-display"><code>${m.productCode}</code></div></td>
+				<td>${dateStr}</td>
+				<td>
+					<button class="btn btn-ghost btn-xs text-danger" onclick="MappingManager.deleteMappingMemory('${m.mappingKey.replace(/'/g, "\\'")}')">
+						삭제
+					</button>
+				</td>
+			`;
+			tbody.appendChild(tr);
+		});
+
+		if (sorted.length > 100) {
+			const moreRow = document.createElement('tr');
+			moreRow.innerHTML = `<td colspan="5" class="text-center text-muted py-2" style="font-size:12px;">... 외 ${sorted.length - 100}건은 '디버그 다운로드'로 확인 가능합니다.</td>`;
+			tbody.appendChild(moreRow);
+		}
 	},
 };
 
@@ -1254,25 +1298,43 @@ const ExcelAnalyzer = {
 	},
 };
 
-// AppState 확장: DB 통계 갱신 (로딩 상태 포함)
+// AppState 확장: DB 및 매핑 통계 갱신
 AppState.updateDBStats = async function () {
 	const countEl = document.getElementById('total-db-count');
-	const statusArea = document.getElementById('db-status-area');
+	const memoryCountEl = document.getElementById('total-memory-count');
+	const dbStatusArea = document.getElementById('db-status-area');
+	const memorySection = document.getElementById('mapping-memory-section');
 
-	if (countEl) countEl.textContent = '데이터 조회 중...';
-	if (statusArea) statusArea.classList.remove('hidden');
+	if (countEl) countEl.textContent = '조회 중...';
+	if (memoryCountEl) memoryCountEl.textContent = '-';
 
-	if (typeof DatabaseManager !== 'undefined' && DatabaseManager.getAll) {
+	// 탭에 맞는 영역만 노출
+	if (this.currentTab === 'database-tab') {
+		dbStatusArea?.classList.remove('hidden');
+	} else if (this.currentTab === 'mapping-tab') {
+		memorySection?.classList.remove('hidden');
+	}
+
+	if (typeof DatabaseManager !== 'undefined') {
 		try {
-			const products = await DatabaseManager.getAll();
+			const [products, memories] = await Promise.all([
+				DatabaseManager.getAll(),
+				DatabaseManager.getMappingMemory(),
+			]);
+
 			if (countEl) {
 				countEl.innerHTML = `<strong style="color:var(--color-primary)">${products.length.toLocaleString()}</strong> 개`;
 			}
-			if (statusArea) {
-				// 데이터가 0개여도 일단 '0개'라고 명확히 표시 (연결 확인용)
-				statusArea.classList.remove('hidden');
+			if (memoryCountEl) {
+				memoryCountEl.innerHTML = `<strong style="color:var(--color-success)">${memories.length.toLocaleString()}</strong> 건`;
+			}
+
+			// 매핑 관리 목록 재생성 (현재 탭이 매핑 탭일 때만)
+			if (this.currentTab === 'mapping-tab') {
+				UIController.renderMappingMemoryTable(memories);
 			}
 		} catch (e) {
+			console.error('Update stats error:', e);
 			if (countEl) countEl.textContent = '조회 실패';
 		}
 	}
@@ -1470,13 +1532,15 @@ const DatabaseManager = {
 
 	async removeMappingMemory(mappingKey) {
 		try {
-			await fetch(`${this.baseUrl}/mapping-memory`, {
+			const res = await fetch(`${this.baseUrl}/mapping-memory`, {
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ mappingKey }),
 			});
+			return res.ok;
 		} catch (e) {
 			console.error('Remove Mapping Memory error:', e);
+			return false;
 		}
 	},
 
@@ -1572,6 +1636,20 @@ const DatabaseManager = {
 			await fetch(`${this.baseUrl}/ignored-items/all`, { method: 'DELETE' });
 		} catch (e) {
 			console.error('Clear Ignored Items error:', e);
+		}
+	},
+
+	async removeIgnoredItem(ignoreKey) {
+		try {
+			const res = await fetch(`${this.baseUrl}/ignored-items`, {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ignoreKey }),
+			});
+			return res.ok;
+		} catch (e) {
+			console.error('Remove Ignored Item error:', e);
+			return false;
 		}
 	},
 };
@@ -1717,10 +1795,18 @@ const MappingManager = {
 			const dbOption = db.option || db.optionName || '';
 			const dbOptionNorm = normalize(dbOption);
 
-			// 2. [완전 일치] 상품명(전체 혹은 순수명)이 같고, 옵션에 컬러와 사이즈가 포함된 경우
+			// 2. [완적 일치] 상품명(전체 혹은 순수명)이 같고, 옵션에 컬러와 사이즈가 포함된 경우
 			const isNameExactlyMatch =
 				normalize(dbFullName) === sNameNorm || normalize(dbPureName) === sNameNorm;
-			const isSizeMatch = sSize && dbOptionNorm.includes(sSize);
+
+			// [수정] 사이즈 매칭 강화: 'M'이 'mm'에 포함되어 오매칭되는 것 방지
+			// 경계선(\b)이나 특수문자 전후를 체크하여 독립적인 사이즈명으로 존재할 때만 인정
+			let isSizeMatch = false;
+			if (sSize) {
+				// S, M, L 같은 단일 문자는 앞뒤가 구분자(괄호, 콜론, 쉼표, 공백)여야 함
+				const regex = new RegExp(`(^|[:\\(\\s,\\/])${sSize}([:\\)\\s,\\/]|$)`, 'i');
+				isSizeMatch = regex.test(dbOptionNorm);
+			}
 
 			// 핑크 vs 진핑크 엄격 구분 로직 포함
 			const isColorMatch = sColorNorm && dbOptionNorm.includes(sColorNorm);
@@ -2267,6 +2353,24 @@ const MappingManager = {
 		if (feedList) feedList.innerHTML = '<div class="feed-empty">활동 없음</div>';
 
 		UIController.showToast('모든 매핑 정보가 초기화되었습니다.', 'success');
+	},
+
+	// 개별 매핑 기억 삭제
+	async deleteMappingMemory(mappingKey) {
+		if (
+			!confirm(
+				'해당 매핑 학습 데이터를 삭제하시겠습니까?\n이후 자동 매칭 시 이 항목은 다시 수동으로 매칭해야 합니다.',
+			)
+		)
+			return;
+
+		const success = await DatabaseManager.removeMappingMemory(mappingKey);
+		if (success) {
+			UIController.showToast('매핑 기억이 성공적으로 삭제되었습니다.', 'success');
+			AppState.updateDBStats(); // 통계 및 목록 갱신
+		} else {
+			UIController.showToast('삭제 중 오류가 발생했습니다.', 'error');
+		}
 	},
 
 	// [중요] 이지어드민 업로드 파일 생성 (엑셀 .xlsx 형식 + 도매인 분리 규칙)

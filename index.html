@@ -340,6 +340,39 @@
 								이지어드민 업로드 파일 생성
 							</button>
 						</div>
+
+						<!-- 학습된 매핑 데이터 관리 (이동됨) -->
+						<div id="mapping-memory-section" class="mt-5 pt-4" style="border-top: 2px dashed var(--color-border);">
+							<div class="db-stats-card success mb-4">
+								<div class="stat-item">
+									<span class="stat-label">🧠 누적 학습된 매핑(기억):</span>
+									<span class="stat-value" id="total-memory-count">0</span>
+								</div>
+								<p class="stat-hint">수동 매칭 시 시스템에 자동으로 저장된 결과입니다.</p>
+							</div>
+
+							<div class="mapping-memory-list-section">
+								<div class="section-header-compact">
+									<h3>📚 학습 데이터 관리 (최근 100건)</h3>
+								</div>
+								<div class="table-responsive database-table-wrapper">
+									<table class="table">
+										<thead>
+											<tr>
+												<th>패킹리스트 정보</th>
+												<th>옵션 / 사이즈</th>
+												<th>매칭된 정보</th>
+												<th>학습일</th>
+												<th>관리</th>
+											</tr>
+										</thead>
+										<tbody id="mapping-memory-tbody">
+											<!-- 동적으로 생성됨 -->
+										</tbody>
+									</table>
+								</div>
+							</div>
+						</div>
 					</section>
 				</div>
 
