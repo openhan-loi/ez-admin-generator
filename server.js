@@ -174,27 +174,61 @@ app.post('/api/ignored-items', async (req, res) => {
 
 // ---------- API 엔드포인트: 분석 대기 데이터 (Scheduled Analysis) ----------
 app.get('/api/scheduled-analysis', async (req, res) => {
-	const { data, error } = await supabase
-		.from('scheduled_analysis')
-		.select('*')
-		.order('timestamp', { ascending: true });
-	if (error) return res.status(500).json({ error: error.message });
-	res.json(data);
+	try {
+		const { data, error } = await supabase
+			.from('scheduled_analysis')
+			.select('*')
+			.order('timestamp', { ascending: true });
+
+		if (error) {
+			// 테이블이 아예 없는 경우(404) 빈 배열 반환하여 오류 방지
+			if (
+				error.code === 'PGRST116' ||
+				error.message.includes('relation "scheduled_analysis" does not exist')
+			) {
+				return res.json([]);
+			}
+			return res.status(500).json({ error: error.message });
+		}
+		res.json(data || []);
+	} catch (e) {
+		res.json([]);
+	}
 });
 
 app.post('/api/scheduled-analysis/batch', async (req, res) => {
 	const items = req.body;
 	if (!Array.isArray(items)) return res.status(400).json({ error: 'Invalid data format' });
 
-	// 기존 데이터 삭제 후 새 데이터 저장 (항상 최신 분석 결과 유지)
-	await supabase
-		.from('scheduled_analysis')
-		.delete()
-		.neq('id', '00000000-0000-0000-0000-000000000000');
+	try {
+		// 1. 기존 데이터 삭제
+		await supabase
+			.from('scheduled_analysis')
+			.delete()
+			.neq('id', '00000000-0000-0000-0000-000000000000');
 
-	const { error } = await supabase.from('scheduled_analysis').insert(items);
-	if (error) return res.status(500).json({ error: error.message });
-	res.json({ success: true, count: items.length });
+		// 2. 대용량 데이터를 500개씩 쪼개서 저장 (Supabase 제한 극복)
+		const CHUNK_SIZE = 500;
+		for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+			const chunk = items.slice(i, i + CHUNK_SIZE);
+			const { error } = await supabase.from('scheduled_analysis').insert(chunk);
+			if (error) {
+				console.error(`Chunk insert error at ${i}:`, error.message);
+				// 테이블이 없는 경우를 위한 친절한 에러
+				if (error.message.includes('relation "scheduled_analysis" does not exist')) {
+					return res
+						.status(404)
+						.json({ error: '데이터 저장 테이블이 없습니다. DB 생성이 필요합니다.' });
+				}
+				throw error;
+			}
+		}
+
+		res.json({ success: true, count: items.length });
+	} catch (error) {
+		console.error('Batch save error:', error);
+		res.status(500).json({ error: error.message });
+	}
 });
 
 app.delete('/api/scheduled-analysis/all', async (req, res) => {

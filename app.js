@@ -1358,29 +1358,59 @@ const DatabaseManager = {
 		}
 	},
 
-	// [중요] 분석된 데이터를 서버로 동기화 (사용자 요청 사항)
+	// [중요] 분석된 데이터를 서버로 동기화 + 로컬 보관 (2중 보관)
 	async saveScheduledAnalysis(items) {
 		try {
-			UIController.showToast(`${items.length}건의 분석 데이터를 서버에 동기화 중...`, 'info');
+			// 1. 로컬 백업 (즉시성)
+			try {
+				localStorage.setItem('scheduled_analysis_backup', JSON.stringify(items));
+			} catch (e) {
+				console.warn('Local storage backup failed (over capacity?)');
+			}
+
+			UIController.showToast(`${items.length}건의 분석 데이터를 동기화 중...`, 'info');
+
+			// 2. 서버 백업
 			const response = await fetch(`${this.baseUrl}/scheduled-analysis/batch`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(items),
 			});
+
+			if (response.status === 404) {
+				console.error('Table not found on server');
+				UIController.showToast('서버 테이블이 없어 로컬에만 임시 저장되었습니다.', 'warning');
+				return { success: true, localOnly: true };
+			}
+
 			return await response.json();
 		} catch (e) {
 			console.error('Save Scheduled Analysis error:', e);
-			UIController.showToast('서버 동기화 실패', 'error');
+			UIController.showToast('서버 동기화 실패. 로컬 데이터로 대체합니다.', 'warning');
+			return { success: true, localOnly: true };
 		}
 	},
 
 	async getScheduledAnalysis() {
 		try {
+			// 1. 서버 데이터 시도
 			const response = await fetch(`${this.baseUrl}/scheduled-analysis`);
-			return await response.json();
+			const data = await response.json();
+
+			if (data && data.length > 0) return data;
+
+			// 2. 서버에 없다면 로컬 백업 확인
+			const localBackup = localStorage.getItem('scheduled_analysis_backup');
+			if (localBackup) {
+				console.log('Restoring from local backup');
+				return JSON.parse(localBackup);
+			}
+
+			return [];
 		} catch (e) {
 			console.error('Get Scheduled Analysis error:', e);
-			return [];
+			const localBackup = localStorage.getItem('scheduled_analysis_backup');
+			return localBackup ? JSON.parse(localBackup) : [];
 		}
 	},
 
