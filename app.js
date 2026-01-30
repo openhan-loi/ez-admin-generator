@@ -619,8 +619,6 @@ const FileHandler = {
 					throw new Error('필수 컬럼(상품코드, 상품명)을 찾을 수 없습니다.');
 				}
 
-				UIController.showToast('데이터베이스에 저장 중입니다 (잠시만 기다려주세요)...', 'info');
-
 				const products = [];
 				for (let i = 1; i < jsonData.length; i++) {
 					const row = jsonData[i];
@@ -636,10 +634,39 @@ const FileHandler = {
 					});
 				}
 
-				// IndexedDB에 순차적으로 저장 (대량 처리에 안정적)
-				await DatabaseManager.saveProducts(products);
+				// [진행 메타 정보]
+				const batchSize = 500; // 서버 부하 분산 및 진행률 표시를 위해 500개씩 끊어서 전송
+				const totalProducts = products.length;
+				let processedCount = 0;
+
+				UIController.showToast('데이터베이스에 저장 중입니다...', 'info');
+
+				// 업로드 중 UI로 전환 (선택 사항: 이미 로딩 바가 있다면 재사용)
+				const statusArea = document.getElementById('db-status-area');
+				if (statusArea) {
+					statusArea.classList.remove('hidden');
+					const countEl = document.getElementById('total-db-count');
+					if (countEl)
+						countEl.innerHTML = `<span class="upload-loader"></span> 저장 중... (0/${totalProducts.toLocaleString()})`;
+				}
+
+				// Chunk 단위 순차 업로드
+				for (let i = 0; i < products.length; i += batchSize) {
+					const chunk = products.slice(i, i + batchSize);
+					await DatabaseManager.saveProducts(chunk);
+
+					processedCount += chunk.length;
+					const percent = Math.floor((processedCount / totalProducts) * 100);
+
+					// 실시간 진행률 업데이트
+					const countEl = document.getElementById('total-db-count');
+					if (countEl) {
+						countEl.innerHTML = `<span class="upload-loader"></span> ${percent}% 완료 (${processedCount.toLocaleString()} / ${totalProducts.toLocaleString()})`;
+					}
+				}
+
 				UIController.showToast(
-					`${products.length.toLocaleString()}건의 제품이 등록되었습니다.`,
+					`${totalProducts.toLocaleString()}건의 제품이 모두 등록되었습니다.`,
 					'success',
 				);
 				AppState.updateDBStats();
