@@ -268,25 +268,31 @@ app.post('/api/generate-ezadmin', (req, res) => {
 		return res.status(400).json({ error: 'Invalid data' });
 	}
 
-	// 이지어드민 업로드 양식 헤더 (표준 6개 필드)
-	const headers = ['도매처', '상품명', '옵션명', '수량', '바코드', '메모'];
+	const today = new Date();
+	const yymmdd =
+		today.getFullYear().toString().slice(2) +
+		String(today.getMonth() + 1).padStart(2, '0') +
+		String(today.getDate()).padStart(2, '0');
+
+	// [규칙 복구] 이지어드민 업로드 양식: 상품코드, 수량, 메모
+	const headers = ['상품코드', '수량', '메모'];
 	let csv = '\uFEFF' + headers.join(',') + '\n';
 
 	data.forEach((item) => {
-		// 매핑 성공한 항목만 처리
 		if (item.status === 'success' && item.target) {
 			const source = item.source;
 			const target = item.target;
-			const qty = Object.values(source.quantities)[0] || 0;
 
-			const row = [
-				`"${source.wholesaler}"`,
-				`"${target.productName}"`,
-				`"${target.optionName || target.option || '-'}"`,
-				qty,
-				`"${target.barcode || ''}"`,
-				`"${source.fileName} | ${source.productName} | ${source.color}"`,
-			];
+			// 해당 항목의 수량 합산
+			const qty = Object.values(source.quantities).reduce((a, b) => {
+				const val = parseInt(b) || 0;
+				return a + val;
+			}, 0);
+
+			// [규칙 복구] 메모: YYMMDD_파일명
+			const memo = `${yymmdd}_${source.fileName}`;
+
+			const row = [`"${target.productCode}"`, qty, `"${memo}"`];
 			csv += row.join(',') + '\n';
 		}
 	});
