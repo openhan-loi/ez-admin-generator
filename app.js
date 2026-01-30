@@ -2113,39 +2113,56 @@ const MappingManager = {
 		UIController.showToast('모든 매핑 정보가 초기화되었습니다.', 'success');
 	},
 
-	// [중요] 이지어드민 업로드 파일 서버 생성 및 다운로드
+	// [중요] 이지어드민 업로드 파일 서버 생성 및 다운로드 (도매인별 분리 규칙)
 	async generateEzAdminFile() {
 		const successMappings = this.mappings.filter((m) => m.status === 'success' && m.target);
 		if (successMappings.length === 0) {
-			UIController.showToast('매칭 성공한 항목이 없습니다. 먼저 매핑을 진행해주세요.', 'warning');
+			UIController.showToast('매칭 성공한 항목이 없습니다.', 'warning');
 			return;
 		}
 
-		UIController.showToast('이지어드민 업로드 파일을 생성 중입니다...', 'info');
+		// 1. 도매인별로 데이터 그룹화
+		const groups = {};
+		successMappings.forEach((m) => {
+			const wholesaler = m.source.wholesaler || '미지정';
+			if (!groups[wholesaler]) groups[wholesaler] = [];
+			groups[wholesaler].push(m);
+		});
 
-		try {
-			const response = await fetch(`${DatabaseManager.baseUrl}/generate-ezadmin`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ data: successMappings }),
-			});
+		const totalGroups = Object.keys(groups).length;
+		UIController.showToast(`총 ${totalGroups}개의 도매인별 파일을 생성합니다...`, 'info');
 
-			if (!response.ok) throw new Error('파일 생성 실패');
+		// 2. 각 도매인별로 서버 요청 및 다운로드
+		for (const [wholesaler, items] of Object.entries(groups)) {
+			try {
+				const response = await fetch(`${DatabaseManager.baseUrl}/generate-ezadmin`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ data: items }),
+				});
 
-			const blob = await response.blob();
-			const url = window.URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = `EzAdmin_Upload_${new Date().toISOString().split('T')[0]}.csv`;
-			document.body.appendChild(a);
-			a.click();
-			window.URL.revokeObjectURL(url);
+				if (!response.ok) throw new Error(`${wholesaler} 파일 생성 실패`);
 
-			UIController.showToast('파일 생성이 완료되었습니다! 다운로드 항목을 확인하세요.', 'success');
-		} catch (error) {
-			console.error('File Generation Error:', error);
-			UIController.showToast('파일 생성 중 서버 오류가 발생했습니다.', 'error');
+				const blob = await response.blob();
+				const url = window.URL.createObjectURL(blob);
+				const a = document.createElement('a');
+
+				// 파일명 규칙: [도매인]오늘날짜_시간.csv
+				const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+				a.href = url;
+				a.download = `[${wholesaler}]_${timestamp}.csv`;
+
+				document.body.appendChild(a);
+				a.click();
+				window.URL.revokeObjectURL(url);
+				document.body.removeChild(a);
+			} catch (error) {
+				console.error(`${wholesaler} 생성 오류:`, error);
+				UIController.showToast(`${wholesaler} 파일 생성 중 오류가 발생했습니다.`, 'error');
+			}
 		}
+
+		UIController.showToast('모든 도매인별 파일 생성이 완료되었습니다.', 'success');
 	},
 
 	async downloadMappingDebug() {
