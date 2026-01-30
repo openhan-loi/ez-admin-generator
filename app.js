@@ -1266,6 +1266,7 @@ const EventListeners = {
 const DatabaseManager = {
 	baseUrl:
 		window.location.origin === 'http://localhost:3000' ? 'http://localhost:3000/api' : '/api',
+	_productCache: null, // [캐시] 서버 데이터 임시 저장
 
 	init(callback) {
 		// 클라우드 기반이므로 특별한 초기화 불필요, 즉시 콜백 호출
@@ -1273,11 +1274,17 @@ const DatabaseManager = {
 		if (callback) callback();
 	},
 
-	// 제품 마스터 DB 가져오기
+	// 제품 마스터 DB 가져오기 (캐시 적용)
 	async getAll(callback) {
+		if (this._productCache) {
+			if (callback) callback(this._productCache);
+			return this._productCache;
+		}
+
 		try {
 			const response = await fetch(`${this.baseUrl}/products`);
 			const data = await response.json();
+			this._productCache = data; // 캐시에 저장
 			if (callback) callback(data);
 			return data;
 		} catch (e) {
@@ -1285,6 +1292,12 @@ const DatabaseManager = {
 			if (callback) callback([]);
 			return [];
 		}
+	},
+
+	// 캐시 강제 초기화 (DB 동기화 후 호출)
+	clearCache() {
+		this._productCache = null;
+		console.log('DatabaseManager: Cache cleared.');
 	},
 
 	// 매핑 기억 저장 및 조회
@@ -1751,11 +1764,10 @@ const MappingManager = {
 		}
 	},
 
-	executeManualSearch(isAuto = false) {
+	async executeManualSearch(isAuto = false) {
 		const query = document.getElementById('manual-search-input').value.trim();
 		if (!query) return;
 
-		// 사용자가 직접 검색하거나 키워드를 추가한 경우에만 '최근 검색어'로 저장
 		if (!isAuto) {
 			this.lastQuery = query;
 		}
@@ -1763,17 +1775,22 @@ const MappingManager = {
 		const keywords = query.toLowerCase().split(/\s+/);
 		const currentWholesaler = this.mappings[this.currentManualIdx].source.wholesaler;
 
-		DatabaseManager.getAll((dbProducts) => {
-			// 도매인 필터 + 키워드 AND 검색 (상품명이나 옵션에 모든 키워드가 포함되어야 함)
-			const results = dbProducts.filter((p) => {
-				if (p.wholesaler !== currentWholesaler) return false;
+		// 캐시된 데이터를 사용하여 즉시 검색 (초고속)
+		const dbProducts = await DatabaseManager.getAll();
+		const results = dbProducts.filter((p) => {
+			if (p.wholesaler !== currentWholesaler) return false;
 
-				const fullText = (p.productName + ' ' + p.optionName + ' ' + p.productCode).toLowerCase();
-				return keywords.every((k) => fullText.includes(k));
-			});
-
-			this.renderSearchResults(results);
+			const fullText = (
+				p.productName +
+				' ' +
+				(p.option || p.optionName || '') +
+				' ' +
+				(p.productCode || '')
+			).toLowerCase();
+			return keywords.every((k) => fullText.includes(k));
 		});
+
+		this.renderSearchResults(results);
 	},
 
 	renderSearchResults(results) {
