@@ -6,6 +6,7 @@ const AppState = {
 	uploadedFiles: [], // 여러 파일 저장
 	analyzedData: [],
 	sheetWholesalers: {}, // { "fileName_sheetName": "wholesalerName" }
+	fileSheetCache: {}, // [캐시] { "fileName_size": ["Sheet1", "Sheet2"] }
 
 	init() {
 		// 1. 데이터 먼저 로드 (새로고침 시 사라짐 방지 최우선)
@@ -187,7 +188,10 @@ const AppState = {
 	clearAllFiles() {
 		this.uploadedFiles = [];
 		this.sheetWholesalers = {};
+		this.fileSheetCache = {};
+		this.analyzedData = []; // 분석 데이터도 함께 초기화
 		this.updateAnalyzeButton();
+		UIController.showSection('upload-section'); // 업로드 화면으로 전환
 	},
 
 	updateAnalyzeButton() {
@@ -489,83 +493,95 @@ const FileHandler = {
 		container.innerHTML = '';
 
 		for (const file of AppState.uploadedFiles) {
-			const card = document.createElement('div');
-			card.className = 'file-card';
+			try {
+				const card = document.createElement('div');
+				card.className = 'file-card';
 
-			const header = document.createElement('div');
-			header.className = 'file-card-header';
-			header.innerHTML = `
-				<div class="file-card-info">${file.name} (${UIController.formatFileSize(file.size)})</div>
-				<button class="btn-remove-file" style="background:none; border:none; color:var(--color-danger); cursor:pointer;">제거</button>
-			`;
+				const header = document.createElement('div');
+				header.className = 'file-card-header';
+				header.innerHTML = `
+					<div class="file-card-info">${file.name} (${UIController.formatFileSize(file.size)})</div>
+					<button class="btn-remove-file" style="background:none; border:none; color:var(--color-danger); cursor:pointer;">제거</button>
+				`;
 
-			header.querySelector('.btn-remove-file').addEventListener('click', () => {
-				AppState.removeFile(file.name);
-				this.renderFileList();
-			});
-
-			const sheetsContainer = document.createElement('div');
-			sheetsContainer.className = 'file-card-sheets';
-
-			// 시트 목록 읽기 (캐싱 고려 가능하지만 여기선 매번 읽음)
-			const workbook = await this.readWorkbook(file);
-			const sheetNames = workbook.SheetNames.slice(1); // 첫 시트 무시
-
-			sheetNames.forEach((sheetName) => {
-				const item = document.createElement('div');
-				item.className = 'sheet-config-item';
-
-				const nameSpan = document.createElement('span');
-				nameSpan.className = 'sheet-name';
-				nameSpan.textContent = sheetName;
-
-				const select = document.createElement('select');
-				select.innerHTML = '<option value="">-- 도매인 선택 --</option>';
-				AppState.wholesalers.forEach((w) => {
-					const opt = document.createElement('option');
-					opt.value = w;
-					opt.textContent = w;
-					select.appendChild(opt);
+				header.querySelector('.btn-remove-file').addEventListener('click', () => {
+					AppState.removeFile(file.name);
+					this.renderFileList();
 				});
 
-				const key = `${file.name}_${sheetName}`;
-				if (AppState.sheetWholesalers[key]) {
-					select.value = AppState.sheetWholesalers[key];
-				} else {
-					// [지능형 자동 매칭 프리셋]
-					const fName = file.name.toLowerCase();
-					const sName = sheetName.toLowerCase();
+				const sheetsContainer = document.createElement('div');
+				sheetsContainer.className = 'file-card-sheets';
 
-					if (fName.includes('롤라루') || sName.includes('롤라루')) {
-						select.value = 'growingup';
-						AppState.sheetWholesalers[key] = 'growingup';
-					} else if (fName.includes('오즈') || sName.includes('오즈')) {
-						select.value = 'dammom';
-						AppState.sheetWholesalers[key] = 'dammom';
-					} else if (AppState.selectedWholesaler) {
-						select.value = AppState.selectedWholesaler;
-						AppState.sheetWholesalers[key] = AppState.selectedWholesaler;
-					}
+				// 시트 목록 읽기 (캐싱 적용: 파일 내용이 크면 매우 느림)
+				const cacheKey = `${file.name}_${file.size}`;
+				let sheetNames = AppState.fileSheetCache[cacheKey];
+
+				if (!sheetNames) {
+					const workbook = await this.readWorkbook(file);
+					sheetNames = workbook.SheetNames;
+					AppState.fileSheetCache[cacheKey] = sheetNames;
 				}
 
-				select.addEventListener('change', (ev) => {
-					const val = ev.target.value;
-					if (val) {
-						AppState.sheetWholesalers[key] = val;
+				// [수정] slice(1) 제거: 0번 시트(첫 번째 시트)도 반드시 포함되어야 함
+				sheetNames.forEach((sheetName) => {
+					const item = document.createElement('div');
+					item.className = 'sheet-config-item';
+
+					const nameSpan = document.createElement('span');
+					nameSpan.className = 'sheet-name';
+					nameSpan.textContent = sheetName;
+
+					const select = document.createElement('select');
+					select.innerHTML = '<option value="">-- 도매인 선택 --</option>';
+					AppState.wholesalers.forEach((w) => {
+						const opt = document.createElement('option');
+						opt.value = w;
+						opt.textContent = w;
+						select.appendChild(opt);
+					});
+
+					const key = `${file.name}_${sheetName}`;
+					if (AppState.sheetWholesalers[key]) {
+						select.value = AppState.sheetWholesalers[key];
 					} else {
-						delete AppState.sheetWholesalers[key];
+						// [지능형 자동 매칭 프리셋]
+						const fName = file.name.toLowerCase();
+						const sName = sheetName.toLowerCase();
+
+						if (fName.includes('롤라루') || sName.includes('롤라루')) {
+							select.value = 'growingup';
+							AppState.sheetWholesalers[key] = 'growingup';
+						} else if (fName.includes('오즈') || sName.includes('오즈')) {
+							select.value = 'dammom';
+							AppState.sheetWholesalers[key] = 'dammom';
+						} else if (AppState.selectedWholesaler) {
+							select.value = AppState.selectedWholesaler;
+							AppState.sheetWholesalers[key] = AppState.selectedWholesaler;
+						}
 					}
-					AppState.updateAnalyzeButton();
+
+					select.addEventListener('change', (ev) => {
+						const val = ev.target.value;
+						if (val) {
+							AppState.sheetWholesalers[key] = val;
+						} else {
+							delete AppState.sheetWholesalers[key];
+						}
+						AppState.updateAnalyzeButton();
+					});
+
+					item.appendChild(nameSpan);
+					item.appendChild(select);
+					sheetsContainer.appendChild(item);
 				});
 
-				item.appendChild(nameSpan);
-				item.appendChild(select);
-				sheetsContainer.appendChild(item);
-			});
-
-			card.appendChild(header);
-			card.appendChild(sheetsContainer);
-			container.appendChild(card);
+				card.appendChild(header);
+				card.appendChild(sheetsContainer);
+				container.appendChild(card);
+			} catch (e) {
+				console.error(`Error rendering file ${file.name}:`, e);
+				UIController.showToast(`${file.name} 시트 정보를 읽지 못했습니다.`, 'error');
+			}
 		}
 
 		AppState.updateAnalyzeButton();
@@ -602,30 +618,42 @@ const FileHandler = {
 				// 대용량 파일을 위해 가벼운 읽기 옵션 사용
 				const workbook = XLSX.read(data, {
 					type: 'array',
-					cellDates: false,
+					cellDates: true,
 					cellStyles: false,
 					cellNF: false,
 					cellText: false,
-					sheets: [0], // 첫 번째 시트만 사용
 				});
 
-				const firstSheetName = workbook.SheetNames[0];
-				const worksheet = workbook.Sheets[firstSheetName];
-				const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+				// [수정] 첫 번째 시트 고정이 아니라, 상품 정보가 들어있는 시트를 자동으로 탐색
+				let targetSheetName = null;
+				let colMap = null;
+				let jsonData = [];
 
-				if (jsonData.length < 2) throw new Error('데이터가 부족합니다.');
+				for (const sheetName of workbook.SheetNames) {
+					const ws = workbook.Sheets[sheetName];
+					const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+					if (!rows || rows.length < 2) continue;
 
-				const headers = jsonData[0];
-				const colMap = {
-					code: headers.indexOf('상품코드'),
-					name: headers.indexOf('상품명'),
-					option: headers.indexOf('옵션'),
-					barcode: headers.indexOf('바코드'),
-					stock: headers.indexOf('가용재고'),
-				};
+					// 헤더 탐색
+					const headers = rows[0] || [];
+					const tempMap = {
+						code: headers.indexOf('상품코드'),
+						name: headers.indexOf('상품명'),
+						option: headers.indexOf('옵션'),
+						barcode: headers.indexOf('바코드'),
+						stock: headers.indexOf('가용재고'),
+					};
 
-				if (colMap.code === -1 || colMap.name === -1) {
-					throw new Error('필수 컬럼(상품코드, 상품명)을 찾을 수 없습니다.');
+					if (tempMap.code !== -1 && tempMap.name !== -1) {
+						targetSheetName = sheetName;
+						colMap = tempMap;
+						jsonData = rows;
+						break;
+					}
+				}
+
+				if (!targetSheetName) {
+					throw new Error('모든 시트에서 필수 컬럼(상품코드, 상품명)을 찾을 수 없습니다.');
 				}
 
 				UIController.showToast('데이터베이스에 저장 중입니다 (잠시만 기다려주세요)...', 'info');
@@ -786,6 +814,13 @@ const ExcelAnalyzer = {
 				this.extractFromLeftGridTable(data, sheetName, fileName, wholesaler, results);
 			} else if (tableType === 'right') {
 				this.extractFromRightTable(data, sheetName, fileName, wholesaler, results);
+			} else {
+				// [추가] 분석 실패 시 알림
+				console.warn(`Unknown table structure in ${fileName} - ${sheetName}`);
+				UIController.showToast(
+					`${fileName} (${sheetName})의 표 구조를 인식할 수 없습니다. '품명' 헤더가 있는지 확인해주세요.`,
+					'warning',
+				);
 			}
 		});
 
@@ -801,13 +836,12 @@ const ExcelAnalyzer = {
 		for (let i = 0; i < Math.min(data.length, 50); i++) {
 			const row = data[i] || [];
 
-			// 1. 오른쪽 표 감지 (8열 이후 '품명' 헤더 존재 여부)
-			if (row.slice(8).some((cell) => cell && String(cell).includes('품명'))) {
-				hasRight = true;
-			}
+			// 1. 오른쪽 표 감지 (전체 열에 대해 '품명' 헤더 존재 여부 탐색 - 범위 확장)
+			const pIdx = row.findIndex((cell) => cell && String(cell).includes('품명'));
 
-			// 2. 왼쪽 표 헤더 감지
-			if (row.slice(0, 5).some((cell) => cell && String(cell).includes('품명'))) {
+			if (pIdx >= 8) {
+				hasRight = true;
+			} else if (pIdx !== -1) {
 				hasLeft = true;
 
 				// 3. 그리드형(다중 사이즈) 판별
