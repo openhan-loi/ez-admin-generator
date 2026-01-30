@@ -26,7 +26,13 @@ let dbLock = {
 app.get('/api/products', async (req, res) => {
 	const { data, error } = await supabase.from('products').select('*');
 	if (error) return res.status(500).json({ error: error.message });
-	res.json(data);
+
+	// 앱 규격(optionName)에 맞게 변환하여 응답
+	const mappedData = data.map((p) => ({
+		...p,
+		optionName: p.option, // DB의 option을 앱의 optionName으로 변환
+	}));
+	res.json(mappedData);
 });
 
 app.get('/api/products/count', async (req, res) => {
@@ -46,8 +52,8 @@ app.post('/api/products/sync', async (req, res) => {
 		productCode: String(p.productCode),
 		wholesaler: p.wholesaler,
 		productName: p.productName,
-		option: p.optionName || p.option, // optionName이 있으면 사용, 없으면 기 존재하던 option 사용
-		barcode: p.barcode,
+		option: p.optionName || p.option || '', // 명칭 일치
+		barcode: p.barcode || '',
 		stock: parseInt(p.stock) || 0,
 	}));
 
@@ -145,7 +151,5 @@ app.delete('/api/db/lock', (req, res) => {
 
 const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => {
-	console.log(`🚀 Supabase 영구 데이터베이스 연동 완료!`);
-	console.log(`URL: ${SUPABASE_URL}`);
-	console.log(`Port: ${PORT}`);
+	console.log(`🚀 Supabase 영구 데이터베이스 연동 및 명칭 교정 완료!`);
 });
