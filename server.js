@@ -172,11 +172,36 @@ app.post('/api/ignored-items', async (req, res) => {
 	res.json({ success: true });
 });
 
-app.delete('/api/ignored-items/all', async (req, res) => {
-	const { error } = await supabase
-		.from('ignoredItems')
+// ---------- API 엔드포인트: 분석 대기 데이터 (Scheduled Analysis) ----------
+app.get('/api/scheduled-analysis', async (req, res) => {
+	const { data, error } = await supabase
+		.from('scheduled_analysis')
+		.select('*')
+		.order('timestamp', { ascending: true });
+	if (error) return res.status(500).json({ error: error.message });
+	res.json(data);
+});
+
+app.post('/api/scheduled-analysis/batch', async (req, res) => {
+	const items = req.body;
+	if (!Array.isArray(items)) return res.status(400).json({ error: 'Invalid data format' });
+
+	// 기존 데이터 삭제 후 새 데이터 저장 (항상 최신 분석 결과 유지)
+	await supabase
+		.from('scheduled_analysis')
 		.delete()
-		.neq('ignoreKey', 'FORCE_DELETE_ALL');
+		.neq('id', '00000000-0000-0000-0000-000000000000');
+
+	const { error } = await supabase.from('scheduled_analysis').insert(items);
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true, count: items.length });
+});
+
+app.delete('/api/scheduled-analysis/all', async (req, res) => {
+	const { error } = await supabase
+		.from('scheduled_analysis')
+		.delete()
+		.neq('id', '00000000-0000-0000-0000-000000000000');
 	if (error) return res.status(500).json({ error: error.message });
 	res.json({ success: true });
 });

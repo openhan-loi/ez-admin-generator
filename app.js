@@ -72,7 +72,23 @@ const AppState = {
 			document.getElementById('analyze-btn')?.classList.add('hidden');
 			document.getElementById('next-step-btn')?.classList.add('hidden');
 
-			if (MappingManager.mappings.length === 0) {
+			// [신규] 서버에서 분석 이력(Scheduled)이 있는지 확인하여 데이터 복구
+			if (AppState.analyzedData.length === 0) {
+				UIController.showToast('서버에서 분석 데이터를 불러오는 중...', 'info');
+				DatabaseManager.getScheduledAnalysis().then((data) => {
+					if (data && data.length > 0) {
+						AppState.analyzedData = data;
+						UIController.showToast(`${data.length}건의 분석 데이터를 복구했습니다.`, 'success');
+						const startBtn = document.getElementById('start-auto-mapping-btn');
+						if (startBtn) startBtn.classList.remove('hidden');
+					} else {
+						UIController.showToast(
+							'진행 중인 분석 데이터가 없습니다. 먼저 분석을 진행해주세요.',
+							'warning',
+						);
+					}
+				});
+			} else if (MappingManager.mappings.length === 0) {
 				const startBtn = document.getElementById('start-auto-mapping-btn');
 				if (startBtn) startBtn.classList.remove('hidden');
 			}
@@ -710,6 +726,10 @@ const ExcelAnalyzer = {
 			}
 
 			AppState.analyzedData = allResults;
+
+			// [중요] 분석 완료 후 즉시 서버 DB로 전송 (클라우드 동기화)
+			await DatabaseManager.saveScheduledAnalysis(allResults);
+
 			this.showResults(allResults);
 		} catch (error) {
 			console.error('분석 오류:', error);
@@ -1217,162 +1237,129 @@ const EventListeners = {
 	},
 };
 
-// ========== Database Manager (IndexedDB) ==========
+// ========== Database Manager (Cloud API Based) ==========
 const DatabaseManager = {
-	dbName: 'EzAdminDB',
-	storeName: 'products',
-	db: null,
+	baseUrl:
+		window.location.origin === 'http://localhost:3000' ? 'http://localhost:3000/api' : '/api',
 
 	init(callback) {
-		const request = indexedDB.open(this.dbName, 2); // 버전 업그레이드
-
-		request.onupgradeneeded = (e) => {
-			const db = e.target.result;
-			if (!db.objectStoreNames.contains(this.storeName)) {
-				db.createObjectStore(this.storeName, { keyPath: 'productCode' });
-			}
-			// 매핑 기억 저장소 추가
-			if (!db.objectStoreNames.contains('mappingMemory')) {
-				db.createObjectStore('mappingMemory', { keyPath: 'mappingKey' });
-			}
-			// 매핑 제외 저장소 추가
-			if (!db.objectStoreNames.contains('ignoredItems')) {
-				db.createObjectStore('ignoredItems', { keyPath: 'ignoreKey' });
-			}
-		};
-
-		request.onsuccess = (e) => {
-			this.db = e.target.result;
-			if (callback) callback();
-		};
-
-		request.onerror = (e) => {
-			console.error('DB Open Error:', e);
-			UIController.showToast('데이터베이스를 초기화할 수 없습니다.', 'error');
-		};
+		// 클라우드 기반이므로 특별한 초기화 불필요, 즉시 콜백 호출
+		console.log('DatabaseManager: Cloud API mode initialized.');
+		if (callback) callback();
 	},
 
-	saveProducts(products) {
-		return new Promise((resolve, reject) => {
-			if (!this.db) {
-				reject(new Error('데이터베이스가 초기화되지 않았습니다.'));
-				return;
-			}
-			const transaction = this.db.transaction([this.storeName], 'readwrite');
-			const store = transaction.objectStore(this.storeName);
-
-			products.forEach((p) => store.put(p));
-
-			transaction.oncomplete = () => resolve();
-			transaction.onerror = (e) => reject(e);
-		});
+	// 제품 마스터 DB 가져오기
+	async getAll(callback) {
+		try {
+			const response = await fetch(`${this.baseUrl}/products`);
+			const data = await response.json();
+			if (callback) callback(data);
+			return data;
+		} catch (e) {
+			console.error('DatabaseManager.getAll Error:', e);
+			if (callback) callback([]);
+			return [];
+		}
 	},
 
-	getAll() {
-		return new Promise((resolve) => {
-			if (!this.db) return resolve([]);
-			try {
-				const transaction = this.db.transaction([this.storeName], 'readonly');
-				const store = transaction.objectStore(this.storeName);
-				const request = store.getAll();
-				request.onsuccess = () => resolve(request.result);
-				request.onerror = () => resolve([]);
-			} catch (e) {
-				console.error('DatabaseManager.getAll Error:', e);
-				resolve([]);
-			}
-		});
+	// 매핑 기억 저장 및 조회
+	async saveMappingMemory(mappingKey, productCode, fileName) {
+		try {
+			await fetch(`${this.baseUrl}/mapping-memory`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mappingKey, productCode, fileName }),
+			});
+		} catch (e) {
+			console.error('Save Mapping Memory error:', e);
+		}
 	},
 
-	clearAll(callback) {
-		if (!this.db) return;
-		const transaction = this.db.transaction([this.storeName], 'readwrite');
-		const store = transaction.objectStore(this.storeName);
-		const request = store.clear();
-
-		request.onsuccess = () => {
-			if (callback) callback();
-		};
+	async getMappingMemory() {
+		try {
+			const response = await fetch(`${this.baseUrl}/mapping-memory`);
+			return await response.json();
+		} catch (e) {
+			console.error('Get Mapping Memory error:', e);
+			return [];
+		}
 	},
 
-	// 매핑 기억 관련 함수들
-	saveMappingMemory(mappingKey, productCode, fileName) {
-		if (!this.db) return;
-		const transaction = this.db.transaction(['mappingMemory'], 'readwrite');
-		const store = transaction.objectStore('mappingMemory');
-		store.put({
-			mappingKey,
-			productCode,
-			fileName: fileName || '',
-			timestamp: new Date().getTime(),
-		});
+	async removeMappingMemory(mappingKey) {
+		try {
+			await fetch(`${this.baseUrl}/mapping-memory`, {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mappingKey }),
+			});
+		} catch (e) {
+			console.error('Remove Mapping Memory error:', e);
+		}
 	},
 
-	getMappingMemory() {
-		return new Promise((resolve) => {
-			if (!this.db) return resolve([]);
-			try {
-				const transaction = this.db.transaction(['mappingMemory'], 'readonly');
-				const store = transaction.objectStore('mappingMemory');
-				const request = store.getAll();
-				request.onsuccess = () => resolve(request.result);
-				request.onerror = () => resolve([]);
-			} catch (e) {
-				console.error('DatabaseManager.getMappingMemory Error:', e);
-				resolve([]);
-			}
-		});
+	// 매핑 제외 저장 및 조회
+	async saveIgnoreItem(ignoreKey) {
+		try {
+			await fetch(`${this.baseUrl}/ignored-items`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ignoreKey }),
+			});
+		} catch (e) {
+			console.error('Save Ignore Item error:', e);
+		}
 	},
 
-	removeMappingMemory(mappingKey) {
-		if (!this.db) return;
-		const transaction = this.db.transaction(['mappingMemory'], 'readwrite');
-		const store = transaction.objectStore('mappingMemory');
-		store.delete(mappingKey);
+	async getIgnoredItems() {
+		try {
+			const response = await fetch(`${this.baseUrl}/ignored-items`);
+			return await response.json();
+		} catch (e) {
+			console.error('Get Ignored Items error:', e);
+			return [];
+		}
 	},
 
-	clearMappingMemory() {
-		return new Promise((resolve) => {
-			if (!this.db) return resolve();
-			const transaction = this.db.transaction(['mappingMemory'], 'readwrite');
-			const store = transaction.objectStore('mappingMemory');
-			const request = store.clear();
-			request.onsuccess = () => resolve();
-		});
+	// [중요] 분석된 데이터를 서버로 동기화 (사용자 요청 사항)
+	async saveScheduledAnalysis(items) {
+		try {
+			UIController.showToast(`${items.length}건의 분석 데이터를 서버에 동기화 중...`, 'info');
+			const response = await fetch(`${this.baseUrl}/scheduled-analysis/batch`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(items),
+			});
+			return await response.json();
+		} catch (e) {
+			console.error('Save Scheduled Analysis error:', e);
+			UIController.showToast('서버 동기화 실패', 'error');
+		}
 	},
 
-	// 매핑 제외 관련 함수들
-	saveIgnoreItem(ignoreKey) {
-		if (!this.db) return;
-		const transaction = this.db.transaction(['ignoredItems'], 'readwrite');
-		const store = transaction.objectStore('ignoredItems');
-		store.put({ ignoreKey, timestamp: new Date().getTime() });
+	async getScheduledAnalysis() {
+		try {
+			const response = await fetch(`${this.baseUrl}/scheduled-analysis`);
+			return await response.json();
+		} catch (e) {
+			console.error('Get Scheduled Analysis error:', e);
+			return [];
+		}
 	},
 
-	getIgnoredItems() {
-		return new Promise((resolve) => {
-			if (!this.db) return resolve([]);
-			try {
-				const transaction = this.db.transaction(['ignoredItems'], 'readonly');
-				const store = transaction.objectStore('ignoredItems');
-				const request = store.getAll();
-				request.onsuccess = () => resolve(request.result);
-				request.onerror = () => resolve([]);
-			} catch (e) {
-				console.error('DatabaseManager.getIgnoredItems Error:', e);
-				resolve([]);
-			}
-		});
+	async clearAllMappingMemory() {
+		try {
+			await fetch(`${this.baseUrl}/mapping-memory/all`, { method: 'DELETE' });
+		} catch (e) {
+			console.error('Clear Mapping Memory error:', e);
+		}
 	},
 
-	clearIgnoredItems() {
-		return new Promise((resolve) => {
-			if (!this.db) return resolve();
-			const transaction = this.db.transaction(['ignoredItems'], 'readwrite');
-			const store = transaction.objectStore('ignoredItems');
-			const request = store.clear();
-			request.onsuccess = () => resolve();
-		});
+	async clearIgnoredItems() {
+		try {
+			await fetch(`${this.baseUrl}/ignored-items/all`, { method: 'DELETE' });
+		} catch (e) {
+			console.error('Clear Ignored Items error:', e);
+		}
 	},
 };
 
@@ -1387,83 +1374,105 @@ const MappingManager = {
 			return;
 		}
 
-		UIController.showToast('과거 매핑 기록을 불러오는 중...', 'info');
+		// UI 초기화: 진행률 표시기 노출
+		const progressArea = document.getElementById('mapping-progress-area');
+		const progressBar = document.getElementById('mapping-progress-bar');
+		const percentText = document.getElementById('mapping-percent');
+		const statsText = document.getElementById('mapping-stats-text');
+		const startBtn = document.getElementById('start-auto-mapping-btn');
 
-		// 0. 매핑 기억(Memory) 및 제외 목록(Ignored) 가져오기
-		DatabaseManager.getMappingMemory(async (memoryList) => {
-			DatabaseManager.getIgnoredItems(async (ignoredList) => {
-				UIController.showToast('지능형 자동 매핑을 시작합니다...', 'info');
+		progressArea?.classList.remove('hidden');
+		startBtn?.classList.add('hidden');
 
-				// 자동 매핑 시작 버튼 숨김 (1회용)
-				document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
+		UIController.showToast('클라우드 매핑 정보를 불러오는 중...', 'info');
 
-				// 1. DB 전체 데이터 가져오기
-				DatabaseManager.getAll(async (dbProducts) => {
-					if (dbProducts.length === 0) {
-						UIController.showToast('등록된 제품 DB가 없습니다. DB를 먼저 구축해주세요.', 'error');
-						return;
+		// 0. 클라우드에서 매핑 기억(Memory) 및 제외 목록(Ignored) 병렬 로드
+		const [memoryList, ignoredList, dbProducts] = await Promise.all([
+			DatabaseManager.getMappingMemory(),
+			DatabaseManager.getIgnoredItems(),
+			DatabaseManager.getAll(),
+		]);
+
+		if (dbProducts.length === 0) {
+			UIController.showToast('제품 DB가 비어있습니다. DB를 먼저 구축해주세요.', 'error');
+			progressArea?.classList.add('hidden');
+			startBtn?.classList.remove('hidden');
+			return;
+		}
+
+		this.mappings = [];
+		const total = sourceData.length;
+
+		UIController.showToast(`지능형 자동 매핑 시작 (${total}건)...`, 'success');
+
+		// 1. 순차적 매핑 진행 (UI 업데이트를 위해 루프 사용)
+		for (let i = 0; i < total; i++) {
+			const item = sourceData[i];
+			const mappingKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
+
+			let matchResult = null;
+
+			// A. 제외 목록 확인
+			const isIgnored = ignoredList.some((ig) => ig.ignoreKey === mappingKey);
+			if (isIgnored) {
+				matchResult = { source: item, target: null, status: 'ignored', similarity: 0 };
+			}
+			// B. 기억에서 찾기
+			else {
+				const remembered = memoryList.find((m) => m.mappingKey === mappingKey);
+				if (remembered) {
+					const dbProduct = dbProducts.find((p) => p.productCode === remembered.productCode);
+					if (dbProduct) {
+						matchResult = { source: item, target: dbProduct, status: 'success', similarity: 100 };
 					}
+				}
+			}
 
-					this.mappings = [];
+			// C. 지능형 매칭 엔진 가동 (기억에 없을 때만)
+			if (!matchResult) {
+				const best = this.findBestMatch(item, dbProducts);
+				matchResult = {
+					source: item,
+					target: best.product,
+					status: best.status,
+					similarity: best.similarity,
+				};
 
-					// 2. 각 분석 행에 대해 매칭 시도
-					sourceData.forEach((item, idx) => {
-						const mappingKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
+				// 자동 매칭 성공 시 서버에 기억 저장 (백그라운드)
+				if (matchResult.status === 'success' && matchResult.target) {
+					DatabaseManager.saveMappingMemory(
+						mappingKey,
+						matchResult.target.productCode,
+						item.fileName,
+					);
+					this.addFeedItem(item, matchResult.target, false);
+				}
+			} else {
+				// 기억에서 찾은 경우 피드에 표시
+				if (matchResult.status === 'success') {
+					this.addFeedItem(item, matchResult.target, true);
+				}
+			}
 
-						// A. 먼저 매핑 제외 목록에 있는지 확인
-						const isIgnored = ignoredList.some((ig) => ig.ignoreKey === mappingKey);
-						if (isIgnored) {
-							this.mappings.push({
-								source: item,
-								target: null,
-								status: 'ignored',
-								similarity: 0,
-							});
-							return;
-						}
+			this.mappings.push(matchResult);
 
-						// B. 과거 기억에서 찾기
-						const remembered = memoryList.find((m) => m.mappingKey === mappingKey);
+			// UI 업데이트 (성능을 위해 10개마다 업데이트)
+			if (i % 10 === 0 || i === total - 1) {
+				const percent = Math.round(((i + 1) / total) * 100);
+				if (progressBar) progressBar.style.width = `${percent}%`;
+				if (percentText) percentText.textContent = `${percent}%`;
+				if (statsText) statsText.textContent = `${i + 1} / ${total} 항목 처리됨`;
 
-						if (remembered) {
-							const dbProduct = dbProducts.find((p) => p.productCode === remembered.productCode);
-							if (dbProduct) {
-								this.mappings.push({
-									source: item,
-									target: dbProduct,
-									status: 'success',
-									similarity: 100,
-								});
-								return;
-							}
-						}
+				// 브라우저 렌더링을 위해 잠깐 쉼 (대용량 처리 시 필수)
+				if (i % 100 === 0) await new Promise((r) => setTimeout(r, 0));
+			}
+		}
 
-						// C. 지능형 퍼지 매칭 시도
-						const match = this.findBestMatch(item, dbProducts);
-						this.mappings.push({
-							source: item,
-							target: match.product,
-							status: match.status,
-							similarity: match.similarity,
-						});
-
-						// D. 만약 자동 매칭 성공이면 기억에 저장 및 피드 노출
-						if (match.status === 'success' && match.product) {
-							DatabaseManager.saveMappingMemory(
-								mappingKey,
-								match.product.productCode,
-								item.fileName,
-							);
-							this.addFeedItem(item, match.product, false);
-						}
-					});
-
-					this.renderMappingResults();
-					this.updateSummary();
-					UIController.showToast('자동 매핑이 완료되었습니다.', 'success');
-				});
-			});
-		});
+		// 완료 처리
+		UIController.showToast('자동 매핑이 완료되었습니다!', 'success');
+		document.getElementById('mapping-summary-card')?.classList.remove('hidden');
+		this.renderMappingResults();
+		this.updateSummary();
 	},
 
 	findBestMatch(source, dbList) {
@@ -1953,15 +1962,19 @@ const MappingManager = {
 	async clearAllMappingData() {
 		if (
 			!confirm(
-				'지금까지 학습된 모든 매핑 기억과 제외 목록을 영구적으로 삭제할까요?\n이 작업은 되돌릴 수 없습니다.',
+				'지금까지 학습된 모든 매핑 기억과 제외 목록, 그리고 현재 분석된 데이터를 모두 삭제할까요?\n이 작업은 되돌릴 수 없습니다.',
 			)
 		)
 			return;
 
-		await DatabaseManager.clearMappingMemory();
-		await DatabaseManager.clearIgnoredItems();
+		await Promise.all([
+			DatabaseManager.clearAllMappingMemory(),
+			DatabaseManager.clearIgnoredItems(),
+			DatabaseManager.saveScheduledAnalysis([]), // 서버 분석 데이터 비우기
+		]);
 
 		this.mappings = [];
+		AppState.analyzedData = [];
 		this.renderMappingResults();
 		this.updateSummary();
 

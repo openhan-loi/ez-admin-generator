@@ -365,13 +365,11 @@ body {
 	border-bottom: none;
 	display: flex;
 	flex-direction: column;
-	align-items: flex-end;
-	min-width: fit-content; /* 너비 유동적으로 조정 */
+	align-items: flex-end; /* 오른쪽 정렬 */
+	min-width: 250px;
 }
 
 .wholesaler-header-row {
-	display: flex;
-	gap: var(--spacing-sm);
 	margin-bottom: 4px;
 }
 
@@ -1294,18 +1292,17 @@ body {
 	background: rgba(0, 0, 0, 0.6);
 	backdrop-filter: blur(4px);
 	display: flex;
-	align-items: flex-start; /* 상단 정렬로 변경 */
+	align-items: center;
 	justify-content: center;
-	padding-top: 50px; /* 상단 여백 고정 */
 	z-index: 2000;
 	transition: opacity 0.3s ease;
 }
 
 .modal-content {
 	background: var(--color-surface);
-	width: 95%;
-	max-width: 1100px;
-	max-height: 90vh;
+	width: 90%;
+	max-width: 800px;
+	max-height: 80vh;
 	border-radius: var(--radius-xl);
 	box-shadow: var(--shadow-2xl);
 	display: flex;
@@ -1349,14 +1346,8 @@ body {
 
 .search-input-group {
 	display: flex;
-	gap: var(--spacing-sm);
+	gap: var(--spacing-md);
 	margin-bottom: var(--spacing-lg);
-}
-
-.search-input-group .btn {
-	padding: 0.5rem 1rem;
-	font-size: 0.875rem;
-	white-space: nowrap;
 }
 
 /* ========== Modal UI Content Helpers ========== */
@@ -1531,213 +1522,51 @@ body {
 	border-top: 1px solid var(--color-border);
 	background: var(--color-bg-tertiary);
 }
-
-/* ========== Step 4: Completion UI ========== */
-.complete-card {
-	background: var(--color-surface);
-	padding: var(--spacing-2xl);
-	border-radius: var(--radius-2xl);
-	box-shadow: var(--shadow-xl);
-	max-width: 600px;
-	width: 100%;
-	border: 1px solid var(--color-border);
-}
-
-.success-icon-large {
-	font-size: 5rem;
-	margin-bottom: var(--spacing-md);
-	animation: bounceIn 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-}
-
-@keyframes bounceIn {
-	0% {
-		transform: scale(0.3);
-		opacity: 0;
-	}
-	50% {
-		transform: scale(1.05);
-		opacity: 1;
-	}
-	70% {
-		transform: scale(0.9);
-	}
-	100% {
-		transform: scale(1);
-	}
-}
-
-.download-history-card {
-	background: var(--color-bg-tertiary);
-	border-radius: var(--radius-lg);
+/* ========== Mapping Progress Bar ========== */
+.mapping-progress-container {
+	margin-bottom: var(--spacing-lg);
 	padding: var(--spacing-lg);
-	text-align: left;
+	background: var(--color-bg-primary);
+	border-radius: var(--radius-lg);
+	border: 1px solid var(--color-border);
+	box-shadow: var(--shadow-sm);
 }
 
-.download-history-card h3 {
-	font-size: var(--font-size-base);
-	color: var(--color-text-primary);
-	border-bottom: 2px solid var(--color-border);
-	padding-bottom: var(--spacing-xs);
-	margin-bottom: var(--spacing-md);
-}
-
-.generated-file-item {
+.mapping-progress-info {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	padding: var(--spacing-sm) var(--spacing-md);
-	background: var(--color-surface);
-	border-radius: var(--radius-md);
-	margin-bottom: var(--spacing-xs);
-	border: 1px solid var(--color-border);
-	transition: var(--transition-fast);
+	margin-bottom: var(--spacing-sm);
 }
 
-.generated-file-item:hover {
-	border-color: var(--color-primary);
-	transform: translateX(5px);
-}
-
-.file-info {
-	display: flex;
-	flex-direction: column;
-}
-
-.file-name {
+.progress-label {
 	font-weight: 600;
-	font-size: var(--font-size-sm);
-	color: var(--color-primary);
-}
-
-.file-meta {
-	font-size: var(--font-size-xs);
-	color: var(--color-text-tertiary);
-}
-
-.btn-ghost-sm {
-	background: none;
-	border: none;
-	color: var(--color-primary);
-	cursor: pointer;
-	font-weight: 500;
-	font-size: var(--font-size-xs);
-	padding: 2px 8px;
-	border-radius: var(--radius-sm);
-}
-
-.btn-ghost-sm:hover {
-	background: var(--color-primary-light);
-}
-
-/* ========== Completion Stats Grid ========== */
-.complete-stats-grid {
-	display: grid;
-	grid-template-columns: repeat(3, 1fr);
-	gap: var(--spacing-md);
-	margin-bottom: var(--spacing-lg);
-}
-
-.stat-box {
-	background: var(--color-surface);
-	padding: var(--spacing-md);
-	border-radius: var(--radius-lg);
-	border: 1px solid var(--color-border);
-	text-align: center;
-	transition: var(--transition-fast);
-}
-
-.stat-box:hover {
-	transform: translateY(-2px);
-	box-shadow: var(--shadow-md);
-}
-
-.stat-box.primary {
-	border-top: 3px solid var(--color-primary);
-}
-.stat-box.success {
-	border-top: 3px solid var(--color-success);
-}
-.stat-box.warning {
-	border-top: 3px solid var(--color-warning);
-}
-
-.stat-box-label {
-	display: block;
-	font-size: var(--font-size-xs);
-	color: var(--color-text-secondary);
-	font-weight: 600;
-	margin-bottom: 4px;
-}
-
-.stat-box-value {
-	display: block;
-	font-size: var(--font-size-xl);
-	font-weight: 800;
 	color: var(--color-text-primary);
 }
 
-.stat-box-sub {
-	display: block;
-	font-size: 10px;
-	color: var(--color-text-tertiary);
-	margin-top: 2px;
-}
-
-.detail-reason-list {
-	margin-top: var(--spacing-md);
-	padding: var(--spacing-sm);
-	background: rgba(0, 0, 0, 0.02);
-	border-radius: var(--radius-md);
-	text-align: left;
-}
-
-.reason-item {
-	display: flex;
-	justify-content: space-between;
-	font-size: var(--font-size-xs);
-	color: var(--color-text-secondary);
-	margin-bottom: 4px;
-}
-
-.reason-item:last-child {
-	margin-bottom: 0;
-}
-.reason-count {
+.progress-percentage {
 	font-weight: 700;
-	color: var(--color-text-primary);
+	font-size: var(--font-size-lg);
+	color: var(--color-primary);
 }
 
-/* DB 업로드 로더 */
-.upload-loader {
-	display: inline-block;
-	width: 14px;
-	height: 14px;
-	border: 2px solid var(--color-primary-light);
-	border-top: 2px solid var(--color-primary);
-	border-radius: 50%;
-	animation: spin 0.8s linear infinite;
-	margin-right: 6px;
-	vertical-align: middle;
-}
-
-@keyframes spin {
-	0% {
-		transform: rotate(0deg);
-	}
-	100% {
-		transform: rotate(360deg);
-	}
-}
-
-/* DB 업로드 잠금 상태 */
-.file-upload-area.locked {
+.progress-bar-wrapper {
+	height: 12px;
 	background: var(--color-bg-tertiary);
-	border-color: var(--color-text-tertiary);
-	opacity: 0.7;
-	cursor: not-allowed;
-	pointer-events: none;
-	filter: grayscale(1);
+	border-radius: var(--radius-full);
+	overflow: hidden;
+	margin-bottom: var(--spacing-sm);
 }
-.file-upload-area.locked .upload-icon {
-	animation: none;
+
+.progress-bar-fill {
+	height: 100%;
+	background: var(--gradient-primary);
+	border-radius: var(--radius-full);
+	transition: width 0.3s ease-out;
+}
+
+.progress-stats-text {
+	text-align: right;
+	font-size: var(--font-size-xs);
+	color: var(--color-text-tertiary);
 }
