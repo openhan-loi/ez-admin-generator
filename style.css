@@ -1372,10 +1372,32 @@ body {
 	padding-top: var(--spacing-md);
 }
 
-.data-table.compact td,
-.data-table.compact th {
-	padding: var(--spacing-sm);
+.clickable-keyword {
+	display: inline-block;
+	padding: 6px 12px;
+	margin: 4px;
+	background: var(--color-bg-primary);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
 	font-size: var(--font-size-sm);
+	font-weight: 500;
+	color: var(--color-primary);
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.clickable-keyword:hover {
+	background: var(--color-primary);
+	color: white;
+	box-shadow: var(--shadow-glow);
+	transform: translateY(-2px);
+}
+
+.keywords-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
 }
 
 /* ========== Layout with Sidebar ========== */

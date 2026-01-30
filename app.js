@@ -1811,7 +1811,7 @@ const MappingManager = {
 
 		// 캐시된 데이터를 사용하여 즉시 검색 (초고속)
 		const dbProducts = await DatabaseManager.getAll();
-		const results = dbProducts.filter((p) => {
+		let results = dbProducts.filter((p) => {
 			if (p.wholesaler !== currentWholesaler) return false;
 
 			const fullText = (
@@ -1822,6 +1822,18 @@ const MappingManager = {
 				(p.productCode || '')
 			).toLowerCase();
 			return keywords.every((k) => fullText.includes(k));
+		});
+
+		// [중요] 상품명끼리 묶고 옵션 오름차순 정렬
+		results.sort((a, b) => {
+			// 1. 상품명 비교
+			if (a.productName < b.productName) return -1;
+			if (a.productName > b.productName) return 1;
+
+			// 2. 상품명이 같으면 옵션 비교 (오름차순)
+			const optA = a.option || a.optionName || '';
+			const optB = b.option || b.optionName || '';
+			return optA.localeCompare(optB, 'ko');
 		});
 
 		this.renderSearchResults(results);
