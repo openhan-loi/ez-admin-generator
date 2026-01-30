@@ -1,152 +1,114 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
+const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
-const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// 앱 설정
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.static(__dirname));
 
-// DB 초기화
-const db = new sqlite3.Database('./database.sqlite');
+// ---------- Supabase 설정 ----------
+const SUPABASE_URL = 'https://qsqtoufuwplgmzyvzwvd.supabase.co';
+const SUPABASE_KEY =
+	'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzcXRvdWZ1d3BsZ216eXZ6d3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2ODQ1MTYsImV4cCI6MjA4NTI2MDUxNn0.jd9xfZJy6qkvdZpULBHe_VtivPQz3almBa02X_TPIB4';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// [신규] 전역 작업 잠금 상태 (메모리 저장)
+// [신규] 전역 작업 잠금 상태 (서버 메모리 유지)
 let dbLock = {
 	isLocked: false,
 	user: null,
 	startTime: null,
 };
 
-db.serialize(() => {
-	// 제품 마스터 정보
-	db.run(`CREATE TABLE IF NOT EXISTS products (
-		productCode TEXT PRIMARY KEY,
-		wholesaler TEXT,
-		productName TEXT,
-		option TEXT,
-		barcode TEXT,
-		stock INTEGER
-	)`);
-
-	// 매핑 기억 저장소 (Levenshtein 결과 및 수동 매칭 학습)
-	db.run(`CREATE TABLE IF NOT EXISTS mappingMemory (
-		mappingKey TEXT PRIMARY KEY,
-		productCode TEXT,
-		fileName TEXT,
-		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`);
-
-	// 매핑 제외 목록
-	db.run(`CREATE TABLE IF NOT EXISTS ignoredItems (
-		ignoreKey TEXT PRIMARY KEY,
-		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-	)`);
-
-	// 마지막 검색 쿼리 저장용 (사용자 편의성)
-	db.run(`CREATE TABLE IF NOT EXISTS settings (
-		key TEXT PRIMARY KEY,
-		value TEXT
-	)`);
+// ---------- API 엔드포인트: 제품 마스터 ----------
+app.get('/api/products', async (req, res) => {
+	const { data, error } = await supabase.from('products').select('*');
+	if (error) return res.status(500).json({ error: error.message });
+	res.json(data);
 });
 
-app.get('/api/products', (req, res) => {
-	db.all('SELECT * FROM products', [], (err, rows) => {
-		if (err) return res.status(500).json({ error: err.message });
-		res.json(rows);
-	});
+app.get('/api/products/count', async (req, res) => {
+	const { count, error } = await supabase
+		.from('products')
+		.select('*', { count: 'exact', head: true });
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ count: count || 0 });
 });
 
-app.get('/api/products/count', (req, res) => {
-	db.get('SELECT COUNT(*) as count FROM products', [], (err, row) => {
-		if (err) return res.status(500).json({ error: err.message });
-		res.json({ count: row.count });
-	});
-});
-
-app.post('/api/products/sync', (req, res) => {
+app.post('/api/products/sync', async (req, res) => {
 	const products = req.body;
 	if (!Array.isArray(products)) return res.status(400).json({ error: 'Invalid data format' });
 
-	db.serialize(() => {
-		const stmt = db.prepare('INSERT OR REPLACE INTO products VALUES (?, ?, ?, ?, ?, ?)');
-		products.forEach((p) =>
-			stmt.run(p.productCode, p.wholesaler, p.productName, p.option, p.barcode, p.stock),
-		);
-		stmt.finalize((err) => {
-			if (err) return res.status(500).json({ error: err.message });
-			res.json({ success: true, count: products.length });
-		});
-	});
+	// Supabase의 upsert 기능을 사용하여 중복은 덮어쓰고 신규는 추가함
+	const { error } = await supabase.from('products').upsert(products, { onConflict: 'productCode' });
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true, count: products.length });
 });
 
-app.delete('/api/products/all', (req, res) => {
-	db.run('DELETE FROM products', [], (err) => {
-		if (err) return res.status(500).json({ error: err.message });
-		res.json({ success: true });
-	});
+app.delete('/api/products/all', async (req, res) => {
+	const { error } = await supabase.from('products').delete().neq('productCode', 'FORCE_DELETE_ALL');
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true });
 });
 
 // ---------- API 엔드포인트: 매핑 기억 ----------
-app.get('/api/mapping-memory', (req, res) => {
-	db.all('SELECT * FROM mappingMemory', [], (err, rows) => {
-		if (err) return res.status(500).json({ error: err.message });
-		res.json(rows);
-	});
+app.get('/api/mapping-memory', async (req, res) => {
+	const { data, error } = await supabase.from('mappingMemory').select('*');
+	if (error) return res.status(500).json({ error: error.message });
+	res.json(data);
 });
 
-app.post('/api/mapping-memory', (req, res) => {
+app.post('/api/mapping-memory', async (req, res) => {
 	const { mappingKey, productCode, fileName } = req.body;
-	db.run(
-		'INSERT OR REPLACE INTO mappingMemory (mappingKey, productCode, fileName) VALUES (?, ?, ?)',
-		[mappingKey, productCode, fileName],
-		(err) => {
-			if (err) return res.status(500).json({ error: err.message });
-			res.json({ success: true });
-		},
-	);
+	const { error } = await supabase
+		.from('mappingMemory')
+		.upsert({ mappingKey, productCode, fileName });
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true });
 });
 
-app.delete('/api/mapping-memory', (req, res) => {
+app.delete('/api/mapping-memory', async (req, res) => {
 	const { mappingKey } = req.body;
-	db.run('DELETE FROM mappingMemory WHERE mappingKey = ?', [mappingKey], (err) => {
-		if (err) return res.status(500).json({ error: err.message });
-		res.json({ success: true });
-	});
+	const { error } = await supabase.from('mappingMemory').delete().eq('mappingKey', mappingKey);
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true });
 });
 
-app.delete('/api/mapping-memory/all', (req, res) => {
-	db.run('DELETE FROM mappingMemory', [], (err) => {
-		if (err) return res.status(500).json({ error: err.message });
-		res.json({ success: true });
-	});
+app.delete('/api/mapping-memory/all', async (req, res) => {
+	const { error } = await supabase
+		.from('mappingMemory')
+		.delete()
+		.neq('mappingKey', 'FORCE_DELETE_ALL');
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true });
 });
 
 // ---------- API 엔드포인트: 제외 목록 ----------
-app.get('/api/ignored-items', (req, res) => {
-	db.all('SELECT * FROM ignoredItems', [], (err, rows) => {
-		if (err) return res.status(500).json({ error: err.message });
-		res.json(rows);
-	});
+app.get('/api/ignored-items', async (req, res) => {
+	const { data, error } = await supabase.from('ignoredItems').select('*');
+	if (error) return res.status(500).json({ error: error.message });
+	res.json(data);
 });
 
-app.post('/api/ignored-items', (req, res) => {
+app.post('/api/ignored-items', async (req, res) => {
 	const { ignoreKey } = req.body;
-	db.run('INSERT OR REPLACE INTO ignoredItems (ignoreKey) VALUES (?)', [ignoreKey], (err) => {
-		if (err) return res.status(500).json({ error: err.message });
-		res.json({ success: true });
-	});
+	const { error } = await supabase.from('ignoredItems').upsert({ ignoreKey });
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true });
 });
 
-app.delete('/api/ignored-items/all', (req, res) => {
-	db.run('DELETE FROM ignoredItems', [], (err) => {
-		if (err) return res.status(500).json({ error: err.message });
-		res.json({ success: true });
-	});
+app.delete('/api/ignored-items/all', async (req, res) => {
+	const { error } = await supabase
+		.from('ignoredItems')
+		.delete()
+		.neq('ignoreKey', 'FORCE_DELETE_ALL');
+	if (error) return res.status(500).json({ error: error.message });
+	res.json({ success: true });
 });
 
-// ---------- API 엔드포인트: DB 작업 잠금 제어 ----------
+// ---------- API 엔드포인트: DB 작업 잠금 제어 (메모리) ----------
 app.get('/api/db/lock', (req, res) => {
 	res.json(dbLock);
 });
@@ -167,14 +129,9 @@ app.delete('/api/db/lock', (req, res) => {
 	res.json({ success: true });
 });
 
-const HOST = '0.0.0.0'; // Render 배포 시 필수 설정: 모든 IP로부터의 접속 허용
-
+const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => {
-	console.log(`=================================================`);
-	console.log(`🚀 클라우드 매핑 서버 온라인!`);
-	console.log(`포트: ${PORT} | 호스트: ${HOST}`);
-	console.log(`📡 Render 대시보드에서 제공하는 URL로 접속하세요.`);
-	console.log(`=================================================`);
+	console.log(`🚀 Supabase 영구 데이터베이스 연동 완료!`);
+	console.log(`URL: ${SUPABASE_URL}`);
+	console.log(`Port: ${PORT}`);
 });
-
-// 배포 확인용 타임스탬프: 2026-01-30 09:47
