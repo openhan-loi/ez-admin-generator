@@ -836,24 +836,26 @@ const ExcelAnalyzer = {
 		for (let i = 0; i < Math.min(data.length, 50); i++) {
 			const row = data[i] || [];
 
-			// 1. 오른쪽 표 감지 (전체 열에 대해 '품명' 헤더 존재 여부 탐색 - 범위 확장)
-			const pIdx = row.findIndex((cell) => cell && String(cell).includes('품명'));
+			// 1. 오른쪽 표 감지 (7열 이후 '품명' 헤더 존재 여부 확인)
+			const pIdx = row.findIndex(
+				(cell) => cell && (String(cell).includes('품명') || String(cell).includes('상품명')),
+			);
 
-			if (pIdx >= 8) {
+			if (pIdx >= 7) {
 				hasRight = true;
 			} else if (pIdx !== -1) {
 				hasLeft = true;
-
 				// 3. 그리드형(다중 사이즈) 판별
-				// 헤더나 데이터 행에서 인치(") 표시, 다수의 수량 열 패턴, 혹은 표준 사이즈 문자열 확인
-				const rightSide = row.slice(4, 16);
+				const rightSide = row.slice(pIdx + 1, pIdx + 15);
 				const hasInches = rightSide.some((cell) => cell && String(cell).includes('"'));
 				const commonSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'FREE'];
 				const hasStandardSizes = rightSide.some(
 					(cell) =>
 						cell && typeof cell === 'string' && commonSizes.includes(cell.toUpperCase().trim()),
 				);
-				const hasManyNumbers = rightSide.filter((cell) => typeof cell === 'number').length > 1;
+				// 숫자가 연속으로 2개 이상 나오면 그리드형일 확률 높음
+				const hasManyNumbers =
+					rightSide.filter((cell) => cell !== null && !isNaN(parseFloat(cell))).length > 1;
 				if (hasInches || hasManyNumbers || hasStandardSizes) isGrid = true;
 			}
 		}
@@ -878,7 +880,14 @@ const ExcelAnalyzer = {
 			const pIdx = row.slice(0, 5).findIndex((cell) => cell && String(cell).includes('품명'));
 			if (pIdx !== -1) {
 				PRODUCT_COL = pIdx;
-				COLOR_COL = row.findIndex((c, idx) => idx > pIdx && c && String(c).includes('칼라'));
+				COLOR_COL = row.findIndex(
+					(c, idx) =>
+						idx > pIdx &&
+						c &&
+						(String(c).includes('칼라') ||
+							String(c).includes('색상') ||
+							String(c).includes('컬러')),
+				);
 				SIZE_COL = row.findIndex((c, idx) => idx > pIdx && c && String(c).includes('사이즈'));
 				// 수량 컬럼 찾기: '총수량'을 최우선으로 찾고, 없으면 '수량'을 찾음. '포장수량'과 섞여있을 때를 대비해 뒤에서부터 찾거나 명시적 체크
 				let qIdx = row.findLastIndex((c) => c && String(c).includes('총수량'));
@@ -900,7 +909,14 @@ const ExcelAnalyzer = {
 		for (let i = hIdx + 1; i < data.length; i++) {
 			const row = data[i];
 			if (!row || row.every((c) => c === null)) continue;
-			if (row.some((c) => c && typeof c === 'string' && (c.includes('합계') || c.includes('비고'))))
+			if (
+				row.some(
+					(c) =>
+						c &&
+						typeof c === 'string' &&
+						(c.includes('합계') || c.includes('소계') || c.includes('총계') || c.includes('비고')),
+				)
+			)
 				break;
 
 			let p = row[PRODUCT_COL] ? String(row[PRODUCT_COL]).trim() : null;
@@ -909,8 +925,13 @@ const ExcelAnalyzer = {
 				SIZE_COL !== -1 && row[SIZE_COL] ? String(row[SIZE_COL]).trim().replace(/"/g, '') : null;
 			let q = QTY_COL !== -1 ? parseInt(row[QTY_COL]) : 0;
 
-			// 데이터 행 판별: 품명이 있거나, 품명이 없어도 사이즈/수량이 있는 유효 행
-			if (!p && !c && !s && isNaN(q)) continue;
+			const isSummaryRow = row.some(
+				(c) =>
+					c &&
+					typeof c === 'string' &&
+					(c.includes('합계') || c.includes('소계') || c.includes('총계') || c.includes('비고')),
+			);
+			if (isSummaryRow) continue;
 
 			// 상속 구조 처리
 			if (p) lastP = p;
@@ -938,10 +959,19 @@ const ExcelAnalyzer = {
 
 		for (let i = 0; i < Math.min(data.length, 20); i++) {
 			const row = data[i] || [];
-			const pIdx = row.slice(0, 5).findIndex((cell) => cell && String(cell).includes('품명'));
-			if (pIdx !== -1) {
+			const pIdx = row.findIndex(
+				(cell) => cell && (String(cell).includes('품명') || String(cell).includes('상품명')),
+			);
+			if (pIdx !== -1 && pIdx < 6) {
 				PRODUCT_COL = pIdx;
-				COLOR_COL = row.findIndex((c, idx) => idx > pIdx && c && String(c).includes('칼라'));
+				COLOR_COL = row.findIndex(
+					(c, idx) =>
+						idx > pIdx &&
+						c &&
+						(String(c).includes('칼라') ||
+							String(c).includes('색상') ||
+							String(c).includes('컬러')),
+				);
 				hIdx = i;
 				break;
 			}
@@ -952,14 +982,14 @@ const ExcelAnalyzer = {
 		// 사이즈 맵: 인치가 붙었거나 숫자로 된 헤더 탐색
 		const headerRow = data[hIdx];
 		const sizeMap = [];
+		const commonSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'FREE'];
 		for (let col = Math.max(PRODUCT_COL, COLOR_COL) + 1; col < headerRow.length; col++) {
 			const val = headerRow[col];
-			const commonSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'FREE'];
 			if (
 				val &&
 				(String(val).includes('"') ||
 					commonSizes.includes(String(val).toUpperCase().trim()) ||
-					!isNaN(parseInt(val)))
+					(!isNaN(parseInt(val)) && parseInt(val) > 0))
 			) {
 				sizeMap.push({ col, label: String(val).trim().replace(/"/g, '') });
 			}
@@ -972,9 +1002,13 @@ const ExcelAnalyzer = {
 			if (!row || row.every((c) => c === null)) continue;
 
 			// 합계/비고 제외
-			if (
-				row.some((c) => c && typeof c === 'string' && (c.includes('합계') || c.includes('비고')))
-			) {
+			const isSummaryRow = row.some(
+				(c) =>
+					c &&
+					typeof c === 'string' &&
+					(c.includes('합계') || c.includes('소계') || c.includes('총계') || c.includes('비고')),
+			);
+			if (isSummaryRow) {
 				// 합계 줄 이후에도 데이터가 있을 수 있으므로 break 대신 continue (구조적 전술)
 				if (row.some((c) => c && String(c).includes('비고'))) break;
 				continue;
@@ -1021,9 +1055,10 @@ const ExcelAnalyzer = {
 		// 모든 헤더 위치 감지 (8열 이후에서 탐색)
 		data.forEach((row, i) => {
 			if (!row) return;
-			const pIdx = row.findIndex((c, idx) => idx >= 8 && c && String(c).includes('품명'));
+			const pIdx = row.findIndex(
+				(c, idx) => idx >= 7 && c && (String(c).includes('품명') || String(c).includes('상품명')),
+			);
 			if (pIdx !== -1) {
-				// 이미 찾은 헤더 구조와 너무 가깝지 않은지 확인 (중복 감지 방지)
 				if (headerIndices.length === 0 || i > headerIndices[headerIndices.length - 1].idx + 3) {
 					headerIndices.push({ idx: i, pIdx: pIdx });
 				}
@@ -1036,7 +1071,10 @@ const ExcelAnalyzer = {
 			const hIdx = header.idx;
 			const PRODUCT_COL = header.pIdx;
 			const COLOR_COL = data[hIdx].findIndex(
-				(c, idx) => idx > PRODUCT_COL && c && String(c).includes('칼라'),
+				(c, idx) =>
+					idx > PRODUCT_COL &&
+					c &&
+					(String(c).includes('칼라') || String(c).includes('색상') || String(c).includes('컬러')),
 			);
 
 			if (COLOR_COL === -1) return;
@@ -1053,7 +1091,7 @@ const ExcelAnalyzer = {
 							['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'FREE'].includes(
 								String(cell).toUpperCase().trim(),
 							) ||
-							(!isNaN(cell) && parseInt(cell) > 50))
+							(!isNaN(cell) && parseInt(cell) > 0))
 					) {
 						if (!sizeMap.some((m) => m.col === colIdx)) {
 							sizeMap.push({ col: colIdx, label: String(cell).trim().replace(/"/g, '') });
@@ -1075,10 +1113,13 @@ const ExcelAnalyzer = {
 			for (let i = startI; i < nextHeaderIdx; i++) {
 				const row = data[i];
 				if (!row || row.every((c) => c === null)) continue;
-				if (
-					row.some((c) => c && typeof c === 'string' && (c.includes('합계') || c.includes('비고')))
-				)
-					break;
+				const isSummaryRow = row.some(
+					(c) =>
+						c &&
+						typeof c === 'string' &&
+						(c.includes('합계') || c.includes('소계') || c.includes('총계') || c.includes('비고')),
+				);
+				if (isSummaryRow) break;
 
 				let p = row[PRODUCT_COL] ? String(row[PRODUCT_COL]).trim() : null;
 				let c = row[COLOR_COL] ? String(row[COLOR_COL]).trim() : null;
