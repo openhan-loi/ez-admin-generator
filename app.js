@@ -2113,7 +2113,7 @@ const MappingManager = {
 		UIController.showToast('모든 매핑 정보가 초기화되었습니다.', 'success');
 	},
 
-	// [중요] 이지어드민 업로드 파일 서버 생성 및 다운로드 (도매인별 분리 규칙)
+	// [중요] 이지어드민 업로드 파일 생성 (엑셀 .xlsx 형식 + 도매인 분리 규칙)
 	async generateEzAdminFile() {
 		const successMappings = this.mappings.filter((m) => m.status === 'success' && m.target);
 		if (successMappings.length === 0) {
@@ -2129,48 +2129,57 @@ const MappingManager = {
 			groups[wholesaler].push(m);
 		});
 
-		const totalGroups = Object.keys(groups).length;
-		UIController.showToast(`총 ${totalGroups}개의 도매인별 파일을 생성합니다...`, 'info');
+		const now = new Date();
+		const yymmddShort =
+			now.getFullYear().toString().slice(2) +
+			String(now.getMonth() + 1).padStart(2, '0') +
+			String(now.getDate()).padStart(2, '0');
+		const timestampFull =
+			yymmddShort +
+			String(now.getHours()).padStart(2, '0') +
+			String(now.getMinutes()).padStart(2, '0') +
+			String(now.getSeconds()).padStart(2, '0');
 
-		// 2. 각 도매인별로 서버 요청 및 다운로드
+		UIController.showToast(
+			`총 ${Object.keys(groups).length}개의 엑셀 파일을 생성합니다...`,
+			'info',
+		);
+
+		// 2. 각 도매인별로 엑셀(.xlsx) 생성 및 다운로드
 		for (const [wholesaler, items] of Object.entries(groups)) {
 			try {
-				const response = await fetch(`${DatabaseManager.baseUrl}/generate-ezadmin`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ data: items }),
+				// [이지어드민 규칙] 상품코드, 수량, 메모
+				const excelData = items.map((m) => {
+					const qty = Object.values(m.source.quantities).reduce(
+						(a, b) => a + (parseInt(b) || 0),
+						0,
+					);
+					return {
+						상품코드: m.target.productCode,
+						수량: qty,
+						메모: `${yymmddShort}_${m.source.fileName}`,
+					};
 				});
 
-				if (!response.ok) throw new Error(`${wholesaler} 파일 생성 실패`);
+				// 시트 생성 및 컬럼 너비 조정
+				const worksheet = XLSX.utils.json_to_sheet(excelData);
+				worksheet['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 40 }];
 
-				const blob = await response.blob();
-				const url = window.URL.createObjectURL(blob);
-				const a = document.createElement('a');
+				const workbook = XLSX.utils.book_new();
+				XLSX.utils.book_append_sheet(workbook, worksheet, 'EzAdmin_Upload');
 
-				// [파일명 규칙 수정] [도매인]_yymmddhhmmss.csv
-				const now = new Date();
-				const timestamp =
-					now.getFullYear().toString().slice(2) +
-					String(now.getMonth() + 1).padStart(2, '0') +
-					String(now.getDate()).padStart(2, '0') +
-					String(now.getHours()).padStart(2, '0') +
-					String(now.getMinutes()).padStart(2, '0') +
-					String(now.getSeconds()).padStart(2, '0');
+				// 파일명: [도매인]_yymmddhhmmss.xlsx
+				const fileName = `[${wholesaler}]_${timestampFull}.xlsx`;
 
-				a.href = url;
-				a.download = `[${wholesaler}]_${timestamp}.csv`;
-
-				document.body.appendChild(a);
-				a.click();
-				window.URL.revokeObjectURL(url);
-				document.body.removeChild(a);
+				// 라이브러리를 이용한 브라우저 직접 다운로드
+				XLSX.writeFile(workbook, fileName);
 			} catch (error) {
-				console.error(`${wholesaler} 생성 오류:`, error);
+				console.error(`${wholesaler} 엑셀 생성 오류:`, error);
 				UIController.showToast(`${wholesaler} 파일 생성 중 오류가 발생했습니다.`, 'error');
 			}
 		}
 
-		UIController.showToast('모든 도매인별 파일 생성이 완료되었습니다.', 'success');
+		UIController.showToast('모든 도매인별 엑셀 파일 다운로드가 완료되었습니다.', 'success');
 	},
 
 	async downloadMappingDebug() {
