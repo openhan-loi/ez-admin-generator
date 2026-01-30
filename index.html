@@ -21,7 +21,11 @@
 					<h1>EzAdmin Upload Generator</h1>
 					<div class="header-subtitle">재고 DB 동기화</div>
 				</div>
-				<div class="progress-indicator">
+				<div class="header-actions" style="display: flex; align-items: center; gap: var(--spacing-lg);">
+					<button id="header-refresh-btn" class="btn btn-ghost" style="padding: 8px 12px; font-size: 13px;">
+						🔄 처음부터 다시
+					</button>
+					<div class="progress-indicator">
 					<div class="progress-step active" data-step="1">
 						<div class="step-number">1</div>
 						<div class="step-label">파일 업로드</div>
@@ -42,6 +46,7 @@
 						<div class="step-label">완료</div>
 					</div>
 				</div>
+			</div>
 			</header>
 
 			<!-- 탭 메뉴 -->

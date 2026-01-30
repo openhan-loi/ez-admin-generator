@@ -1387,6 +1387,13 @@ const EventListeners = {
 		document.getElementById('generate-ezauto-btn')?.addEventListener('click', () => {
 			MappingManager.generateEzAdminUploadFiles();
 		});
+
+		// [신규] 헤더 새로고침 버튼 연동
+		document.getElementById('header-refresh-btn')?.addEventListener('click', () => {
+			if (confirm('모든 데이터를 초기화하고 처음부터 다시 시작하시겠습니까?')) {
+				location.reload();
+			}
+		});
 	},
 
 	downloadExcel() {
@@ -1652,9 +1659,25 @@ const MappingManager = {
 
 			// 사이즈는 숫자가 포함되어 있는지 한 번 더 확인 (예: 140 vs 140호)
 			const isSizeMatch = sSize && dbOptionNorm.includes(sSize);
-			const isColorMatch = sColorNorm && dbOptionNorm.includes(sColorNorm);
 
-			if (isNameExactlyMatch && isColorMatch && isSizeMatch) {
+			// [색상 매칭 강화] '진핑크', '연핑크', '핑크'를 엄격히 구분
+			// 단순히 포함(includes)만 확인하면 '핑크'가 '연핑크'에 매칭될 수 있으므로,
+			// 글자 길이가 현저히 다르거나 다른 색상 키워드가 붙어있는지 체크
+			const isColorMatch = sColorNorm && dbOptionNorm.includes(sColorNorm);
+			let isPreciseColor = isColorMatch;
+
+			if (isColorMatch && sColorNorm !== dbOptionNorm) {
+				// 예: 찾는게 '핑크'인데 DB옵션이 '진핑크'인 경우 (부분 포함이지만 다른 색상)
+				const prefixes = ['진', '연', '딥', '라이트', '다크', '핫'];
+				const isSourceBasic = !prefixes.some((p) => sColorNorm.startsWith(p));
+				const isTargetExtended = prefixes.some((p) => dbOptionNorm.includes(p + sColorNorm));
+
+				if (isSourceBasic && isTargetExtended && sColorNorm.length < dbOptionNorm.length) {
+					isPreciseColor = false; // 기본색은 확장색(진/연)에 자동 매칭되지 않게 차단
+				}
+			}
+
+			if (isNameExactlyMatch && isPreciseColor && isSizeMatch) {
 				return { product: db, status: 'success', similarity: 100 };
 			}
 
@@ -1873,21 +1896,34 @@ const MappingManager = {
 			return;
 		}
 
-		// 사용자가 직접 검색하거나 키워드를 추가한 경우에만 '최근 검색어'로 저장
 		if (!isAuto) {
 			this.lastQuery = query;
 		}
 
-		const keywords = query.toLowerCase().split(/\s+/);
-		const currentWholesaler = this.mappings[this.currentManualIdx].source.wholesaler;
+		// 유연한 매칭을 위한 정규화 함수
+		const normalize = (str) =>
+			String(str || '')
+				.replace(/\s/g, '')
+				.toLowerCase();
 
+		const keywords = query.toLowerCase().split(/\s+/);
+		const currentWholesalerNorm = normalize(this.mappings[this.currentManualIdx].source.wholesaler);
+
+		// DB 데이터 로드 (실시간 반영을 위해 매번 호출)
 		const dbProducts = await DatabaseManager.getAll();
 
-		// 도매인 필터 + 키워드 AND 검색 (상품명이나 옵션에 모든 키워드가 포함되어야 함)
+		// 도매인 필터 + 키워드 AND 검색
 		const results = dbProducts.filter((p) => {
-			if (p.wholesaler !== currentWholesaler) return false;
+			if (normalize(p.wholesaler) !== currentWholesalerNorm) return false;
 
-			const fullText = (p.productName + ' ' + p.optionName + ' ' + p.productCode).toLowerCase();
+			// Supabase 규격인 p.option과 p.productName 모두 검색 대상으로 포함
+			const fullText = (
+				p.productName +
+				' ' +
+				(p.option || p.optionName || '') +
+				' ' +
+				p.productCode
+			).toLowerCase();
 			return keywords.every((k) => fullText.includes(k));
 		});
 
