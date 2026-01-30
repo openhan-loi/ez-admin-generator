@@ -42,12 +42,23 @@ const AppState = {
 			c.classList.remove('active');
 		});
 
-		// 2. 타겟 탭 활성화
+		// 2. 타켓 탭 활성화
 		const targetContent = document.getElementById(tabId);
 		if (targetContent) {
 			targetContent.classList.add('active');
-			// 내부 섹션 활성화 복구 (보이게 하기)
-			targetContent.querySelectorAll('.section').forEach((s) => s.classList.add('active'));
+
+			// [수정] 모든 섹션을 다 켜는 게 아니라, 현재 상태에 맞는 섹션만 켬
+			if (tabId === 'analysis-tab') {
+				if (AppState.analyzedData.length > 0) {
+					ExcelAnalyzer.showResults(AppState.analyzedData, true);
+				} else {
+					UIController.showSection('upload-section');
+				}
+			} else {
+				// 다른 탭들은 첫 번째 섹션을 기본으로 활성화
+				const firstSection = targetContent.querySelector('.section');
+				if (firstSection) firstSection.classList.add('active');
+			}
 		}
 
 		// 3. 플로팅 버튼 가시성 제어 (분석 및 매핑 탭에서 허용)
@@ -60,19 +71,19 @@ const AppState = {
 			}
 		}
 
-		// 4. 진행 바 연동 (3번 매핑 단계로 표시)
+		// 4. 진행 바 연동
 		if (tabId === 'mapping-tab') UIController.updateProgress(3);
 		else if (tabId === 'analysis-tab' && AppState.analyzedData.length > 0)
 			UIController.updateProgress(2);
 		else if (tabId === 'analysis-tab') UIController.updateProgress(1);
 
-		// 5. 매핑 탭에 막 들어왔을 때, 자동 매핑을 한 번도 안 했다면 시작 버튼 노출
+		// 5. 매핑 탭에 막 들어왔을 때 프로세스
 		if (tabId === 'mapping-tab') {
 			// 매핑 탭에서는 분석/다음단계 버튼 무조건 숨김
 			document.getElementById('analyze-btn')?.classList.add('hidden');
 			document.getElementById('next-step-btn')?.classList.add('hidden');
 
-			// [신규] 서버에서 분석 이력(Scheduled)이 있는지 확인하여 데이터 복구
+			// 서버에서 분석 이력(Scheduled)이 있는지 확인하여 데이터 복구
 			if (AppState.analyzedData.length === 0) {
 				UIController.showToast('서버에서 분석 데이터를 불러오는 중...', 'info');
 				DatabaseManager.getScheduledAnalysis().then((data) => {
@@ -92,10 +103,8 @@ const AppState = {
 				const startBtn = document.getElementById('start-auto-mapping-btn');
 				if (startBtn) startBtn.classList.remove('hidden');
 			}
-		} else if (tabId !== 'analysis-tab') {
-			// 그 외 탭(DB관리 등)에서는 모든 플로팅 버튼 숨김
-			document.getElementById('analyze-btn')?.classList.add('hidden');
-			document.getElementById('next-step-btn')?.classList.add('hidden');
+		} else {
+			// 그 외 탭에서는 모든 플로팅 버튼 숨김 (분석 탭은 내부 showSection에서 제어)
 			document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
 		}
 	},
@@ -1060,7 +1069,7 @@ const ExcelAnalyzer = {
 		if (text) text.textContent = percent + '%';
 	},
 
-	showResults(data) {
+	showResults(data, isSilent = false) {
 		UIController.showSection('results-section');
 		UIController.updateProgress(2);
 
@@ -1101,7 +1110,9 @@ const ExcelAnalyzer = {
 			});
 		});
 
-		UIController.showToast('전체 분석이 완료되었습니다!', 'success');
+		if (!isSilent) {
+			UIController.showToast('전체 분석이 완료되었습니다!', 'success');
+		}
 	},
 };
 
