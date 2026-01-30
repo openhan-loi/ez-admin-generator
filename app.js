@@ -2147,8 +2147,16 @@ const MappingManager = {
 				const url = window.URL.createObjectURL(blob);
 				const a = document.createElement('a');
 
-				// 파일명 규칙: [도매인]오늘날짜_시간.csv
-				const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+				// [파일명 규칙 수정] [도매인]_yymmddhhmmss.csv
+				const now = new Date();
+				const timestamp =
+					now.getFullYear().toString().slice(2) +
+					String(now.getMonth() + 1).padStart(2, '0') +
+					String(now.getDate()).padStart(2, '0') +
+					String(now.getHours()).padStart(2, '0') +
+					String(now.getMinutes()).padStart(2, '0') +
+					String(now.getSeconds()).padStart(2, '0');
+
 				a.href = url;
 				a.download = `[${wholesaler}]_${timestamp}.csv`;
 
