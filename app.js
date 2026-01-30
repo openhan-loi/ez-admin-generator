@@ -1900,30 +1900,28 @@ const MappingManager = {
 			this.lastQuery = query;
 		}
 
-		// 유연한 매칭을 위한 정규화 함수
-		const normalize = (str) =>
-			String(str || '')
-				.replace(/\s/g, '')
-				.toLowerCase();
+		// 키워드 정규화
+		const keywords = query
+			.toLowerCase()
+			.split(/\s+/)
+			.filter((k) => k.length > 0);
 
-		const keywords = query.toLowerCase().split(/\s+/);
-		const currentWholesalerNorm = normalize(this.mappings[this.currentManualIdx].source.wholesaler);
-
-		// DB 데이터 로드 (실시간 반영을 위해 매번 호출)
+		// DB 데이터 로드
 		const dbProducts = await DatabaseManager.getAll();
 
-		// 도매인 필터 + 키워드 AND 검색
+		// [중요] 도매인 제한을 풀고 키워드 AND 검색 (도매인명이 미세하게 달라도 찾을 수 있게 함)
 		const results = dbProducts.filter((p) => {
-			if (normalize(p.wholesaler) !== currentWholesalerNorm) return false;
-
-			// Supabase 규격인 p.option과 p.productName 모두 검색 대상으로 포함
 			const fullText = (
-				p.productName +
+				(p.productName || '') +
 				' ' +
 				(p.option || p.optionName || '') +
 				' ' +
-				p.productCode
-			).toLowerCase();
+				(p.productCode || '') +
+				' ' +
+				(p.wholesaler || '')
+			) // 도매인 이름도 검색어에 포함
+				.toLowerCase();
+
 			return keywords.every((k) => fullText.includes(k));
 		});
 
