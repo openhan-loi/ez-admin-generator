@@ -836,31 +836,32 @@ const ExcelAnalyzer = {
 		for (let i = 0; i < Math.min(data.length, 50); i++) {
 			const row = data[i] || [];
 
-			// 1. 오른쪽 표 감지 (7열 이후 '품명' 헤더 존재 여부 확인)
-			const pIdx = row.findIndex(
-				(cell) => cell && (String(cell).includes('품명') || String(cell).includes('상품명')),
-			);
+			// 모든 열을 검사하여 왼쪽/오른쪽 여부 판단 (findIndex의 한계 극복)
+			row.forEach((cell, idx) => {
+				if (cell && (String(cell).includes('품명') || String(cell).includes('상품명'))) {
+					if (idx >= 7) {
+						hasRight = true;
+					} else {
+						hasLeft = true;
 
-			if (pIdx >= 7) {
-				hasRight = true;
-			} else if (pIdx !== -1) {
-				hasLeft = true;
-				// 3. 그리드형(다중 사이즈) 판별
-				const rightSide = row.slice(pIdx + 1, pIdx + 15);
-				const hasInches = rightSide.some((cell) => cell && String(cell).includes('"'));
-				const commonSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'FREE'];
-				const hasStandardSizes = rightSide.some(
-					(cell) =>
-						cell && typeof cell === 'string' && commonSizes.includes(cell.toUpperCase().trim()),
-				);
-				// 숫자가 연속으로 2개 이상 나오면 그리드형일 확률 높음
-				const hasManyNumbers =
-					rightSide.filter((cell) => cell !== null && !isNaN(parseFloat(cell))).length > 1;
-				if (hasInches || hasManyNumbers || hasStandardSizes) isGrid = true;
-			}
+						// 왼쪽 표일 경우에만 해당 행에서 그리드 여부 판별
+						const rightSide = row.slice(idx + 1, idx + 15);
+						const commonSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'FREE'];
+						const hasInches = rightSide.some((cell) => cell && String(cell).includes('"'));
+						const hasStandardSizes = rightSide.some(
+							(cell) =>
+								cell && typeof cell === 'string' && commonSizes.includes(cell.toUpperCase().trim()),
+						);
+						const hasManyNumbers =
+							rightSide.filter((cell) => cell !== null && !isNaN(parseFloat(cell))).length > 1;
+
+						if (hasInches || hasManyNumbers || hasStandardSizes) isGrid = true;
+					}
+				}
+			});
 		}
 
-		// OZ-오즈 등 복합 시트는 오른쪽(실데이터) 우선
+		// OZ-오즈 등 복합 시트는 오른쪽(실데이터) 우선 (사용자 요청 반영)
 		if (hasRight) return 'right';
 		if (hasLeft) return isGrid ? 'left-grid' : 'left';
 
