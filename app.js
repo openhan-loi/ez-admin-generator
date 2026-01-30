@@ -1434,6 +1434,17 @@ const DatabaseManager = {
 		}
 	},
 
+	async getCount() {
+		try {
+			const response = await fetch(`${this.baseUrl}/products/count`);
+			if (!response.ok) return { count: 0 };
+			return (await response.json()).count;
+		} catch (e) {
+			console.error('DatabaseManager.getCount Error:', e);
+			return 0;
+		}
+	},
+
 	async clearAll(callback) {
 		const response = await fetch(`${this.baseUrl}/products/all`, { method: 'DELETE' });
 		if (response.ok && callback) callback();

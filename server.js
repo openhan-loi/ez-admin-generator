@@ -51,11 +51,17 @@ db.serialize(() => {
 	)`);
 });
 
-// ---------- API 엔드포인트: 제품 마스터 ----------
 app.get('/api/products', (req, res) => {
 	db.all('SELECT * FROM products', [], (err, rows) => {
 		if (err) return res.status(500).json({ error: err.message });
 		res.json(rows);
+	});
+});
+
+app.get('/api/products/count', (req, res) => {
+	db.get('SELECT COUNT(*) as count FROM products', [], (err, row) => {
+		if (err) return res.status(500).json({ error: err.message });
+		res.json({ count: row.count });
 	});
 });
 
