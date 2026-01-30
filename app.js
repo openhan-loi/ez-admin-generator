@@ -845,11 +845,16 @@ const ExcelAnalyzer = {
 				hasLeft = true;
 
 				// 3. 그리드형(다중 사이즈) 판별
-				// 헤더나 데이터 행에서 인치(") 표시 혹은 다수의 수량 열 패턴 확인
+				// 헤더나 데이터 행에서 인치(") 표시, 다수의 수량 열 패턴, 혹은 표준 사이즈 문자열 확인
 				const rightSide = row.slice(4, 16);
 				const hasInches = rightSide.some((cell) => cell && String(cell).includes('"'));
+				const commonSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'FREE'];
+				const hasStandardSizes = rightSide.some(
+					(cell) =>
+						cell && typeof cell === 'string' && commonSizes.includes(cell.toUpperCase().trim()),
+				);
 				const hasManyNumbers = rightSide.filter((cell) => typeof cell === 'number').length > 1;
-				if (hasInches || hasManyNumbers) isGrid = true;
+				if (hasInches || hasManyNumbers || hasStandardSizes) isGrid = true;
 			}
 		}
 
@@ -949,7 +954,13 @@ const ExcelAnalyzer = {
 		const sizeMap = [];
 		for (let col = Math.max(PRODUCT_COL, COLOR_COL) + 1; col < headerRow.length; col++) {
 			const val = headerRow[col];
-			if (val && (String(val).includes('"') || !isNaN(parseInt(val)))) {
+			const commonSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'FREE'];
+			if (
+				val &&
+				(String(val).includes('"') ||
+					commonSizes.includes(String(val).toUpperCase().trim()) ||
+					!isNaN(parseInt(val)))
+			) {
 				sizeMap.push({ col, label: String(val).trim().replace(/"/g, '') });
 			}
 		}
@@ -1039,7 +1050,9 @@ const ExcelAnalyzer = {
 					if (
 						cell &&
 						(String(cell).includes('"') ||
-							['S', 'M', 'L', 'XL', 'FREE'].includes(String(cell).toUpperCase()) ||
+							['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'FREE'].includes(
+								String(cell).toUpperCase().trim(),
+							) ||
 							(!isNaN(cell) && parseInt(cell) > 50))
 					) {
 						if (!sizeMap.some((m) => m.col === colIdx)) {
