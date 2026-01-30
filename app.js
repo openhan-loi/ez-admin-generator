@@ -371,7 +371,7 @@ const UIController = {
 		return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 	},
 
-	renderMappingMemoryTable(memories) {
+	renderMappingMemoryTable(memories, products = []) {
 		const tbody = document.getElementById('mapping-memory-tbody');
 		if (!tbody) return;
 
@@ -380,6 +380,10 @@ const UIController = {
 				'<tr><td colspan="5" class="text-center text-muted">학습된 매핑 데이터가 없습니다.</td></tr>';
 			return;
 		}
+
+		// 상품 정보 맵핑 (성능 최적화: Map 사용)
+		const productMap = new Map();
+		products.forEach((p) => productMap.set(p.productCode, p));
 
 		// 최신순 정렬
 		const sorted = [...memories].sort((a, b) => b.timestamp - a.timestamp);
@@ -390,10 +394,16 @@ const UIController = {
 			const tr = document.createElement('tr');
 			const dateStr = new Date(m.timestamp).toLocaleDateString();
 
+			// DB 정보 찾기
+			const dbInfo = productMap.get(m.productCode);
+			const targetDisplay = dbInfo
+				? `<div class="mapping-target-display"><strong>${dbInfo.productName}</strong><br><small>코드: <code>${m.productCode}</code> / 옵션: ${dbInfo.optionName || '-'}</small></div>`
+				: `<div class="mapping-target-display"><code>${m.productCode}</code> <small>(DB 정보 없음)</small></div>`;
+
 			tr.innerHTML = `
 				<td><div class="mapping-key-display"><strong>${wholesaler}</strong><br><small>${pName}</small></div></td>
 				<td>${color} / ${size}</td>
-				<td><div class="mapping-target-display"><code>${m.productCode}</code></div></td>
+				<td>${targetDisplay}</td>
 				<td>${dateStr}</td>
 				<td>
 					<button class="btn btn-ghost btn-xs text-danger" onclick="MappingManager.deleteMappingMemory('${m.mappingKey.replace(/'/g, "\\'")}')">
@@ -1331,7 +1341,7 @@ AppState.updateDBStats = async function () {
 
 			// 매핑 관리 목록 재생성 (현재 탭이 매핑 탭일 때만)
 			if (this.currentTab === 'mapping-tab') {
-				UIController.renderMappingMemoryTable(memories);
+				UIController.renderMappingMemoryTable(memories, products);
 			}
 		} catch (e) {
 			console.error('Update stats error:', e);
