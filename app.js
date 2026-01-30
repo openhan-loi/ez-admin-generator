@@ -1616,6 +1616,7 @@ const MappingManager = {
 
 	renderMappingResults() {
 		const tbody = document.getElementById('mapping-table-body');
+		if (!tbody) return;
 		tbody.innerHTML = '';
 
 		// 매칭 성공/제외 항목은 숨기고 주의/실패만 표시
@@ -1630,56 +1631,59 @@ const MappingManager = {
 			return;
 		}
 
-		listToShow.forEach((m) => {
-			// 실제 인덱스 찾기 (원본 mappings 배열 기준)
+		// [최적화] 전체를 다 그리지 않고 상위 100개만 우선 렌더링 (성능 핵심)
+		const slice = listToShow.slice(0, 100);
+		const fragment = document.createDocumentFragment();
+
+		slice.forEach((m) => {
 			const originalIdx = this.mappings.indexOf(m);
-
 			const tr = document.createElement('tr');
-			const statusBadge = `<span class="badge badge-${m.status}">${m.status === 'warning' ? '검토 필요' : '매칭 실패'}</span>`;
+			tr.id = `mapping-row-${originalIdx}`; // 행 추적용 ID
 
+			const statusBadge = `<span class="badge badge-${m.status}">${m.status === 'warning' ? '검토 필요' : '매칭 실패'}</span>`;
 			const dbInfo = m.target
 				? `
 				<div class="mapping-db-item">
 					<strong>[${m.target.productCode}]</strong> ${m.target.productName}<br>
-					<small>옵션: ${m.target.optionName} | 바코드: ${m.target.barcode}</small>
+					<small>옵션: ${m.target.optionName || m.target.option || '-'}</small>
 				</div>
 			`
 				: '<span class="text-muted">매칭된 정보 없음</span>';
 
-			// 키워드 클릭 가능하도록 쪼개기
-			const nameKeywords = m.source.productName.split(/[\s-]+/).filter((k) => k.length > 1);
-			const colorKeyword = m.source.color;
-			const sizeKeyword = Object.keys(m.source.quantities)[0] || '';
-
-			const keywordHtml = `
-				<div class="mapping-row-info">
-					<div class="keywords-list">
-						${nameKeywords.map((k) => `<span class="clickable-keyword" onclick="MappingManager.addKeyword('${k.replace(/'/g, "\\'")}')">${k}</span>`).join('')}
-						<span class="clickable-keyword" onclick="MappingManager.addKeyword('${colorKeyword.replace(/'/g, "\\'")}')">${colorKeyword}</span>
-						<span class="clickable-keyword" onclick="MappingManager.addKeyword('${sizeKeyword.replace(/'/g, "\\'")}')">${sizeKeyword}</span>
-					</div>
-				</div>
-			`;
-
-			const sourceQty = Object.entries(m.source.quantities)
-				.map(([s, q]) => `${s}:${q}`)
-				.join(', ');
+			const sourceQty = Object.values(m.source.quantities)[0] || 0;
 
 			tr.innerHTML = `
 				<td>${statusBadge}</td>
 				<td>${m.source.wholesaler}</td>
-				<td>${keywordHtml}</td>
+				<td>
+					<div class="mapping-source-item">
+						<strong>${m.source.productName}</strong><br>
+						<small>${m.source.color} | ${Object.keys(m.source.quantities)[0] || ''}</small>
+					</div>
+				</td>
 				<td>${dbInfo}</td>
 				<td>${sourceQty}</td>
 				<td>
-					<div class="row-actions">
-						<button class="btn btn-secondary btn-sm" onclick="MappingManager.openManualSearch(${originalIdx})">수동 매칭</button>
-						<button class="btn btn-outline-danger btn-sm" onclick="MappingManager.ignoreItem(${originalIdx})" title="이 상품 매핑 제외">제외</button>
+					<div class="flex-gap-sm">
+						<button class="btn btn-secondary btn-sm" onclick="MappingManager.openManualSearch(${originalIdx})">매칭</button>
+						<button class="btn btn-ghost btn-xs" onclick="MappingManager.ignoreItem(${originalIdx})" title="제외">🚫</button>
 					</div>
 				</td>
 			`;
-			tbody.appendChild(tr);
+			fragment.appendChild(tr);
 		});
+
+		tbody.appendChild(fragment);
+		if (listToShow.length > 100) {
+			const moreTr = document.createElement('tr');
+			moreTr.className = 'more-info-row';
+			moreTr.innerHTML = `<td colspan="6" class="text-center text-muted py-2" style="background:var(--color-bg-secondary); font-size:12px;">
+				...외 ${listToShow.length - 100}건이 더 있습니다. 성능을 위해 상위 100건을 먼저 처리해 주세요.
+			</td>`;
+			tbody.appendChild(moreTr);
+		}
+
+		this.updateSummary();
 	},
 
 	updateSummary() {
@@ -1816,31 +1820,35 @@ const MappingManager = {
 		});
 	},
 
-	selectProduct(productCode) {
-		DatabaseManager.getAll((dbProducts) => {
-			const selected = dbProducts.find((p) => p.productCode === productCode);
-			if (selected) {
-				const idx = this.currentManualIdx;
-				const item = this.mappings[idx].source;
+	async selectProduct(productCode) {
+		const dbProducts = await DatabaseManager.getAll();
+		const selected = dbProducts.find((p) => p.productCode === productCode);
 
-				this.mappings[idx].target = selected;
-				this.mappings[idx].status = 'success';
+		if (selected) {
+			const idx = this.currentManualIdx;
+			const item = this.mappings[idx].source;
 
-				// 1. 수동 매칭 결과 기억 저장
-				const mappingKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
-				DatabaseManager.saveMappingMemory(mappingKey, selected.productCode, item.fileName);
+			// 상태 즉시 업데이트
+			this.mappings[idx].target = selected;
+			this.mappings[idx].status = 'success';
 
-				// 2. 실시간 피드 추가
-				this.addFeedItem(item, selected, false, true);
+			// [혁신] 전체 렌더링을 피하고 해당 행만 삭제하거나 UI 갱신 후 다음으로 이동
+			const row = document.getElementById(`mapping-row-${idx}`);
+			if (row) row.remove(); // 성공했으니 리스트에서 즉시 제거
 
-				this.renderMappingResults();
-				this.updateSummary();
-				UIController.showToast('수동 매칭이 완료되었습니다 (자동 학습됨).', 'success');
+			// 1. 수동 매칭 결과 기억 저장 (비동기로 백그라운드 처리 - 기다리지 않음)
+			const mappingKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
+			DatabaseManager.saveMappingMemory(mappingKey, selected.productCode, item.fileName);
 
-				// 3. 자동으로 다음 미매칭 항목 열기
-				this.autoOpenNext(idx);
-			}
-		});
+			// 2. 실시간 피드 추가
+			this.addFeedItem(item, selected, false, true);
+
+			this.updateSummary();
+			UIController.showToast('매칭 완료!', 'success');
+
+			// 3. 바로 다음 항목으로 점프
+			this.autoOpenNext(idx);
+		}
 	},
 
 	// 매핑 제외 기능 (모달 내부용)
