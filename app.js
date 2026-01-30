@@ -83,23 +83,8 @@ const AppState = {
 			document.getElementById('analyze-btn')?.classList.add('hidden');
 			document.getElementById('next-step-btn')?.classList.add('hidden');
 
-			// 서버에서 분석 이력(Scheduled)이 있는지 확인하여 데이터 복구
-			if (AppState.analyzedData.length === 0) {
-				UIController.showToast('서버에서 분석 데이터를 불러오는 중...', 'info');
-				DatabaseManager.getScheduledAnalysis().then((data) => {
-					if (data && data.length > 0) {
-						AppState.analyzedData = data;
-						UIController.showToast(`${data.length}건의 분석 데이터를 복구했습니다.`, 'success');
-						const startBtn = document.getElementById('start-auto-mapping-btn');
-						if (startBtn) startBtn.classList.remove('hidden');
-					} else {
-						UIController.showToast(
-							'진행 중인 분석 데이터가 없습니다. 먼저 분석을 진행해주세요.',
-							'warning',
-						);
-					}
-				});
-			} else if (MappingManager.mappings.length === 0) {
+			// 자동 매핑을 한 번도 안 했다면 시작 버튼 노출
+			if (AppState.analyzedData.length > 0 && MappingManager.mappings.length === 0) {
 				const startBtn = document.getElementById('start-auto-mapping-btn');
 				if (startBtn) startBtn.classList.remove('hidden');
 			}
@@ -740,9 +725,6 @@ const ExcelAnalyzer = {
 			}
 
 			AppState.analyzedData = allResults;
-
-			// [중요] 분석 완료 후 즉시 서버 DB로 전송 (클라우드 동기화)
-			await DatabaseManager.saveScheduledAnalysis(allResults);
 
 			this.showResults(allResults);
 		} catch (error) {
