@@ -1629,11 +1629,24 @@ const MappingManager = {
 	},
 
 	findBestMatch(source, dbList) {
-		// 유연한 매칭을 위한 정규화 함수 (공백 제거, 소문자화)
-		const normalize = (str) =>
-			String(str || '')
+		// 유연한 매칭을 위한 정규화 함수 (공백 제거, 소문자화 + 도매인 별칭 처리)
+		const normalize = (str) => {
+			let normalized = String(str || '')
 				.replace(/\s/g, '')
 				.toLowerCase();
+			// 도매인 별칭 매핑 (사용자 도매인 규칙 준수용)
+			const aliasMap = {
+				담맘: 'dammom',
+				dammom: 'dammom',
+				오즈: 'oz',
+				oz: 'oz',
+				베리아이: 'veryi',
+				veryi: 'veryi',
+				공주: 'princess',
+				princess: 'princess',
+			};
+			return aliasMap[normalized] || normalized;
+		};
 
 		const sName = source.productName.trim();
 		const sNameNorm = normalize(sName);
@@ -1645,7 +1658,7 @@ const MappingManager = {
 		let bestMatch = { product: null, status: 'danger', similarity: 0 };
 
 		for (const db of dbList) {
-			// 1. 도매인 매칭 (정규화 대조: 공백/대소문자 무시)
+			// 1. 도매인 매칭 (별칭 포함 정규화 대조: 규칙 엄격 준수)
 			if (normalize(db.wholesaler) !== sWholesalerNorm) continue;
 
 			const dbFullName = db.productName;
@@ -1900,27 +1913,45 @@ const MappingManager = {
 			this.lastQuery = query;
 		}
 
-		// 키워드 정규화
+		// 키워드 정규화 및 도매인 별칭 정규화
+		const normalize = (str) => {
+			let normalized = String(str || '')
+				.replace(/\s/g, '')
+				.toLowerCase();
+			const aliasMap = {
+				담맘: 'dammom',
+				dammom: 'dammom',
+				오즈: 'oz',
+				oz: 'oz',
+				베리아이: 'veryi',
+				veryi: 'veryi',
+				공주: 'princess',
+				princess: 'princess',
+			};
+			return aliasMap[normalized] || normalized;
+		};
+
 		const keywords = query
 			.toLowerCase()
 			.split(/\s+/)
 			.filter((k) => k.length > 0);
+		const currentWholesalerNorm = normalize(this.mappings[this.currentManualIdx].source.wholesaler);
 
 		// DB 데이터 로드
 		const dbProducts = await DatabaseManager.getAll();
 
-		// [중요] 도매인 제한을 풀고 키워드 AND 검색 (도매인명이 미세하게 달라도 찾을 수 있게 함)
+		// [도메인 규칙 준수] 도매인 필터 다시 적용
 		const results = dbProducts.filter((p) => {
+			// 도매인 별칭 일치 확인 (예: 담맘 == dammom)
+			if (normalize(p.wholesaler) !== currentWholesalerNorm) return false;
+
 			const fullText = (
 				(p.productName || '') +
 				' ' +
 				(p.option || p.optionName || '') +
 				' ' +
-				(p.productCode || '') +
-				' ' +
-				(p.wholesaler || '')
-			) // 도매인 이름도 검색어에 포함
-				.toLowerCase();
+				(p.productCode || '')
+			).toLowerCase();
 
 			return keywords.every((k) => fullText.includes(k));
 		});
