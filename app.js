@@ -1806,7 +1806,7 @@ const MappingManager = {
 			return;
 		}
 
-		results.slice(0, 20).forEach((p) => {
+		results.slice(0, 50).forEach((p) => {
 			const tr = document.createElement('tr');
 			tr.innerHTML = `
 				<td>${p.productCode}</td>

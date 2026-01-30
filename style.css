@@ -1292,28 +1292,29 @@ body {
 	background: rgba(0, 0, 0, 0.6);
 	backdrop-filter: blur(4px);
 	display: flex;
-	align-items: center;
+	align-items: flex-start; /* 상단 고정 */
 	justify-content: center;
+	padding-top: 20px; /* 상단 여백 */
 	z-index: 2000;
 	transition: opacity 0.3s ease;
 }
 
 .modal-content {
 	background: var(--color-surface);
-	width: 90%;
-	max-width: 800px;
-	max-height: 80vh;
+	width: 95%; /* 기존 90%에서 확대 */
+	max-width: 1000px; /* 기존 800px에서 확대 */
+	max-height: 95vh; /* 기존 80vh에서 대폭 확대 */
 	border-radius: var(--radius-xl);
 	box-shadow: var(--shadow-2xl);
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
-	animation: modalSlideUp 0.3s ease;
+	animation: modalSlideDown 0.3s ease;
 }
 
-@keyframes modalSlideUp {
+@keyframes modalSlideDown {
 	from {
-		transform: translateY(30px);
+		transform: translateY(-30px);
 		opacity: 0;
 	}
 	to {
