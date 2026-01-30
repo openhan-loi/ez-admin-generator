@@ -1913,42 +1913,32 @@ const MappingManager = {
 			this.lastQuery = query;
 		}
 
-		// 키워드 정규화 및 도매인 별칭 정규화
-		const normalize = (str) => {
-			let normalized = String(str || '')
+		// 문자열 정규화 (공백 제거, 소문자화)
+		const clean = (str) =>
+			String(str || '')
 				.replace(/\s/g, '')
 				.toLowerCase();
-			const aliasMap = {
-				담맘: 'dammom',
-				dammom: 'dammom',
-				오즈: 'oz',
-				oz: 'oz',
-				베리아이: 'veryi',
-				veryi: 'veryi',
-				공주: 'princess',
-				princess: 'princess',
-			};
-			return aliasMap[normalized] || normalized;
-		};
 
 		const keywords = query
 			.toLowerCase()
 			.split(/\s+/)
 			.filter((k) => k.length > 0);
-		const currentWholesalerNorm = normalize(this.mappings[this.currentManualIdx].source.wholesaler);
+		const currentWholesalerClean = clean(this.mappings[this.currentManualIdx].source.wholesaler);
 
 		// DB 데이터 로드
 		const dbProducts = await DatabaseManager.getAll();
 
-		// [도메인 규칙 준수] 도매인 필터 다시 적용
+		// [도매인 규칙 엄격 준수] 도매인 이름 매칭 우선
 		const results = dbProducts.filter((p) => {
-			// 도매인 별칭 일치 확인 (예: 담맘 == dammom)
-			if (normalize(p.wholesaler) !== currentWholesalerNorm) return false;
+			// 도매인 이름이 등록된 것과 (예: dammom) 정확히 일치하는지 확인
+			if (clean(p.wholesaler) !== currentWholesalerClean) return false;
 
+			// 상품명, 옵션명, 상품코드 통합 검색
+			const productOption = p.option || p.optionName || '';
 			const fullText = (
 				(p.productName || '') +
 				' ' +
-				(p.option || p.optionName || '') +
+				productOption +
 				' ' +
 				(p.productCode || '')
 			).toLowerCase();
