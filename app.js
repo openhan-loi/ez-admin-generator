@@ -8,6 +8,12 @@ const AppState = {
 	sheetWholesalers: {}, // { "fileName_sheetName": "wholesalerName" }
 
 	init() {
+		// 0. 사용자 식별 ID 생성 (세션 유지용)
+		if (!localStorage.getItem('ez_user_id')) {
+			localStorage.setItem('ez_user_id', 'User_' + Math.random().toString(36).substr(2, 5));
+		}
+		this.userId = localStorage.getItem('ez_user_id');
+
 		// 1. 데이터 먼저 로드 (새로고침 시 사라짐 방지 최우선)
 		this.loadWholesalers();
 
@@ -89,6 +95,59 @@ const AppState = {
 			document.getElementById('analyze-btn')?.classList.add('hidden');
 			document.getElementById('next-step-btn')?.classList.add('hidden');
 			document.getElementById('start-auto-mapping-btn')?.classList.add('hidden');
+		}
+
+		// [신규] 6. DB 관리 탭 진입 시 실시간 잠금 감시 시작
+		if (tabId === 'database-tab') {
+			this.startLockMonitoring();
+		} else {
+			this.stopLockMonitoring();
+		}
+	},
+
+	lockMonitorInterval: null,
+	startLockMonitoring() {
+		this.stopLockMonitoring(); // 중복 방지
+		const monitor = async () => {
+			try {
+				const lock = await DatabaseManager.checkLock();
+				const uploadArea = document.getElementById('db-file-upload-area');
+				const selectBtn = document.getElementById('db-select-file-btn');
+				const helperText = document.querySelector('#database-tab .section-description');
+
+				if (lock && lock.isLocked) {
+					uploadArea.classList.add('locked');
+					if (selectBtn) {
+						selectBtn.disabled = true;
+						selectBtn.innerText = '다른 사용자가 업로드 중...';
+					}
+					if (helperText) {
+						const startTime = new Date(lock.startTime).toLocaleTimeString();
+						helperText.innerHTML = `<span style="color:var(--color-danger); font-weight:bold;">⚠️ 현황: ${lock.user}님이 ${startTime}부터 업로드 중입니다. 잠시만 기다려주세요.</span>`;
+					}
+				} else {
+					uploadArea.classList.remove('locked');
+					if (selectBtn) {
+						selectBtn.disabled = false;
+						selectBtn.innerText = 'DB 파일 선택';
+					}
+					if (helperText) {
+						helperText.innerText =
+							"이지어드민 '현재고조회' 파일을 업로드하여 기준 DB를 구축합니다.";
+					}
+				}
+			} catch (e) {
+				console.error('Lock monitor error:', e);
+			}
+		};
+		monitor(); // 즉시 실행
+		this.lockMonitorInterval = setInterval(monitor, 3000); // 3초마다 확인
+	},
+
+	stopLockMonitoring() {
+		if (this.lockMonitorInterval) {
+			clearInterval(this.lockMonitorInterval);
+			this.lockMonitorInterval = null;
 		}
 	},
 
@@ -584,6 +643,22 @@ const FileHandler = {
 			return;
 		}
 
+		// 1. 서버 잠금 획득 시도
+		try {
+			const lockResult = await DatabaseManager.acquireLock(AppState.userId || '익명의 사용자');
+			if (!lockResult.success) {
+				const startTime = new Date(lockResult.detail.startTime).toLocaleTimeString();
+				UIController.showToast(
+					`현재 ${lockResult.detail.user}님이 ${startTime}부터 업로드 중입니다.`,
+					'warning',
+				);
+				return;
+			}
+		} catch (e) {
+			UIController.showToast('서버 상태 확인에 실패했습니다.', 'error');
+			return;
+		}
+
 		UIController.showToast(`${file.name} 데이터를 읽는 중입니다...`, 'info');
 
 		const reader = new FileReader();
@@ -670,9 +745,12 @@ const FileHandler = {
 					'success',
 				);
 				AppState.updateDBStats();
-			} catch (error) {
-				console.error(error);
-				UIController.showToast('파일 처리 중 오류 발생: ' + error.message, 'error');
+			} catch (err) {
+				console.error('DB upload error:', err);
+				UIController.showToast(err.message || '저장 중 오류 발생', 'error');
+			} finally {
+				// 작업 완료 또는 오류 시 잠금 반드시 해제
+				await DatabaseManager.releaseLock();
 			}
 		};
 		reader.readAsArrayBuffer(file);
@@ -1292,6 +1370,25 @@ const DatabaseManager = {
 		});
 		if (!response.ok) throw new Error('서버 데이터 저장 실패');
 		return await response.json();
+	},
+
+	// [신규] DB 작업 잠금 관련
+	async checkLock() {
+		const res = await fetch(`${this.baseUrl}/db/lock`);
+		return await res.json();
+	},
+
+	async acquireLock(userName) {
+		const res = await fetch(`${this.baseUrl}/db/lock`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ user: userName }),
+		});
+		return await res.json();
+	},
+
+	async releaseLock() {
+		await fetch(`${this.baseUrl}/db/lock`, { method: 'DELETE' });
 	},
 
 	async getAll() {

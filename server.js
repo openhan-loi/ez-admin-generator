@@ -12,6 +12,13 @@ app.use(express.static(__dirname));
 // DB 초기화
 const db = new sqlite3.Database('./database.sqlite');
 
+// [신규] 전역 작업 잠금 상태 (메모리 저장)
+let dbLock = {
+	isLocked: false,
+	user: null,
+	startTime: null,
+};
+
 db.serialize(() => {
 	// 제품 마스터 정보
 	db.run(`CREATE TABLE IF NOT EXISTS products (
@@ -131,6 +138,27 @@ app.delete('/api/ignored-items/all', (req, res) => {
 		if (err) return res.status(500).json({ error: err.message });
 		res.json({ success: true });
 	});
+});
+
+// ---------- API 엔드포인트: DB 작업 잠금 제어 ----------
+app.get('/api/db/lock', (req, res) => {
+	res.json(dbLock);
+});
+
+app.post('/api/db/lock', (req, res) => {
+	const { user } = req.body;
+	if (dbLock.isLocked) {
+		return res
+			.status(423)
+			.json({ success: false, message: '다른 사용자가 작업 중입니다.', detail: dbLock });
+	}
+	dbLock = { isLocked: true, user: user || '알 수 없는 사용자', startTime: new Date() };
+	res.json({ success: true });
+});
+
+app.delete('/api/db/lock', (req, res) => {
+	dbLock = { isLocked: false, user: null, startTime: null };
+	res.json({ success: true });
 });
 
 const HOST = '0.0.0.0'; // Render 배포 시 필수 설정: 모든 IP로부터의 접속 허용
