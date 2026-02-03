@@ -999,7 +999,11 @@ const ExcelAnalyzer = {
 				break;
 
 			let p = row[PRODUCT_COL] ? String(row[PRODUCT_COL]).trim() : null;
-			let c = row[COLOR_COL] ? String(row[COLOR_COL]).trim() : null;
+			let c = row[COLOR_COL]
+				? String(row[COLOR_COL])
+						.trim()
+						.replace(/옐러우/g, '옐로우')
+				: null;
 			let s =
 				SIZE_COL !== -1 && row[SIZE_COL] ? String(row[SIZE_COL]).trim().replace(/"/g, '') : null;
 			let q = QTY_COL !== -1 ? parseInt(row[QTY_COL]) : 0;
@@ -1094,7 +1098,11 @@ const ExcelAnalyzer = {
 			}
 
 			let p = row[PRODUCT_COL] ? String(row[PRODUCT_COL]).trim() : null;
-			let c = row[COLOR_COL] ? String(row[COLOR_COL]).trim() : null;
+			let c = row[COLOR_COL]
+				? String(row[COLOR_COL])
+						.trim()
+						.replace(/옐러우/g, '옐로우')
+				: null;
 
 			// 합계 행 감지 강화: 제품명/컬러가 둘 다 없는데 수량 숫자가 여러 개 발견되면 합계행임
 			const isExplicitlyEmpty = !row[PRODUCT_COL] && !row[COLOR_COL];
@@ -1201,7 +1209,11 @@ const ExcelAnalyzer = {
 				if (isSummaryRow) break;
 
 				let p = row[PRODUCT_COL] ? String(row[PRODUCT_COL]).trim() : null;
-				let c = row[COLOR_COL] ? String(row[COLOR_COL]).trim() : null;
+				let c = row[COLOR_COL]
+					? String(row[COLOR_COL])
+							.trim()
+							.replace(/옐러우/g, '옐로우')
+					: null;
 
 				// 상속 처리
 				if (p) lastP = p;
@@ -1870,6 +1882,7 @@ const MappingManager = {
 		const normalize = (str) =>
 			String(str || '')
 				.replace(/\s/g, '')
+				.replace(/옐러우/g, '옐로우') // [오타교정] 옐러우 -> 옐로우
 				.toLowerCase();
 
 		const sName = source.productName.trim();
