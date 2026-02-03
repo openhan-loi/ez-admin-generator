@@ -1569,6 +1569,44 @@ const DatabaseManager = {
 		console.log('DatabaseManager: Cache cleared.');
 	},
 
+	// 제품 데이터 저장 (신규 DB 등록)
+	async saveProducts(products) {
+		try {
+			UIController.showToast(`${products.length}건의 제품 데이터를 서버에 저장 중...`, 'info');
+
+			const response = await fetch(`${this.baseUrl}/products/sync`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(products),
+			});
+
+			if (!response.ok) {
+				throw new Error(`Server responded with ${response.status}`);
+			}
+
+			const result = await response.json();
+
+			// 저장 성공 시 캐시 초기화
+			this.clearCache();
+
+			return result;
+		} catch (e) {
+			console.error('Save Products error:', e);
+			throw e;
+		}
+	},
+
+	// DB 전체 삭제
+	async clearAll(callback) {
+		try {
+			await fetch(`${this.baseUrl}/products/all`, { method: 'DELETE' });
+			this.clearCache();
+			if (callback) callback();
+		} catch (e) {
+			console.error('Clear All error:', e);
+		}
+	},
+
 	// 매핑 기억 저장 및 조회
 	async saveMappingMemory(mappingKey, productCode, fileName) {
 		try {
