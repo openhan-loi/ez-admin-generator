@@ -381,9 +381,14 @@ const UIController = {
 			return;
 		}
 
-		// 상품 정보 맵핑
+		// 상품 정보 맵핑 ([도메인] 접두어 제거 후 비교를 위해 맵 구조 개선)
+		const normalizeCodeLocal = (c) => String(c || '').replace(/^\[.*?\]/, '');
 		const productMap = new Map();
-		products.forEach((p) => productMap.set(p.productCode, p));
+		products.forEach((p) => {
+			const clean = normalizeCodeLocal(p.productCode);
+			// 도메인별 중복 코드가 있을 수 있으므로 wholesaler 명칭을 포함하여 유일키 생성
+			productMap.set(`${p.wholesaler}|${clean}`, p);
+		});
 
 		// 필터링 적용
 		let filtered = memories;
@@ -391,7 +396,8 @@ const UIController = {
 			const term = searchTerm.toLowerCase().replace(/\s/g, '');
 			filtered = memories.filter((m) => {
 				const [wholesaler, pName] = m.mappingKey.split('|');
-				const pInfo = productMap.get(m.productCode);
+				const cleanCode = normalizeCodeLocal(m.productCode);
+				const pInfo = productMap.get(`${wholesaler}|${cleanCode}`);
 				const content = (wholesaler + pName + m.productCode + (pInfo?.productName || ''))
 					.toLowerCase()
 					.replace(/\s/g, '');
@@ -418,8 +424,9 @@ const UIController = {
 			const tr = document.createElement('tr');
 			const dateStr = new Date(m.timestamp).toLocaleDateString();
 
-			// DB 정보 찾기
-			const dbInfo = productMap.get(m.productCode);
+			// DB 정보 찾기 (도메인 + 순수 코드 조합으로 검색)
+			const cleanCode = normalizeCodeLocal(m.productCode);
+			const dbInfo = productMap.get(`${wholesaler}|${cleanCode}`);
 			const targetDisplay = dbInfo
 				? `<div class="mapping-target-display"><strong>${dbInfo.productName}</strong><br><small>코드: <code>${m.productCode}</code> / 옵션: ${dbInfo.optionName || '-'}</small></div>`
 				: `<div class="mapping-target-display"><code>${m.productCode}</code> <small>(DB 정보 없음)</small></div>`;
