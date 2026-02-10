@@ -1822,9 +1822,12 @@ const MappingManager = {
 			}
 			// B. 기억에서 찾기
 			else {
+				const normalizeCode = (c) => String(c || '').replace(/^\[.*?\]/, '');
 				const remembered = memoryList.find((m) => m.mappingKey === mappingKey);
 				if (remembered) {
-					const dbProduct = dbProducts.find((p) => p.productCode === remembered.productCode);
+					// DB에서 찾을 때 접두어 무시하고 매칭 (유연성 확보)
+					const targetClean = normalizeCode(remembered.productCode);
+					const dbProduct = dbProducts.find((p) => normalizeCode(p.productCode) === targetClean);
 					if (dbProduct) {
 						matchResult = { source: item, target: dbProduct, status: 'success', similarity: 100 };
 					}
@@ -1841,13 +1844,10 @@ const MappingManager = {
 					similarity: best.similarity,
 				};
 
-				// 자동 매칭 성공 시 서버에 기억 저장 (백그라운드)
+				// 자동 매칭 성공 시 서버에 기억 저장 (백그라운드) - 접두어 제거 후 저장 일관성 유지
 				if (matchResult.status === 'success' && matchResult.target) {
-					DatabaseManager.saveMappingMemory(
-						mappingKey,
-						matchResult.target.productCode,
-						item.fileName,
-					);
+					const cleanCode = String(matchResult.target.productCode).replace(/^\[.*?\]/, '');
+					DatabaseManager.saveMappingMemory(mappingKey, cleanCode, item.fileName);
 					this.addFeedItem(item, matchResult.target, false);
 				}
 			} else {
@@ -2271,7 +2271,8 @@ const MappingManager = {
 
 			// 1. 수동 매칭 결과 기억 저장 (비동기로 백그라운드 처리 - 기다리지 않음)
 			const mappingKey = `${item.wholesaler}|${item.productName}|${item.color}|${Object.keys(item.quantities)[0] || ''}`;
-			DatabaseManager.saveMappingMemory(mappingKey, selected.productCode, item.fileName);
+			const cleanCode = String(selected.productCode).replace(/^\[.*?\]/, '');
+			DatabaseManager.saveMappingMemory(mappingKey, cleanCode, item.fileName);
 
 			// 2. 실시간 피드 추가
 			this.addFeedItem(item, selected, false, true);
@@ -2527,8 +2528,9 @@ const MappingManager = {
 						(a, b) => a + (parseInt(b) || 0),
 						0,
 					);
+					const cleanCode = String(m.target.productCode).replace(/^\[.*?\]/, '');
 					return {
-						상품코드: m.target.productCode,
+						상품코드: cleanCode,
 						수량: qty,
 						메모: `${yymmddShort}_${m.source.fileName}`,
 					};
